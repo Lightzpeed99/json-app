@@ -1,6 +1,135 @@
 // src/utils/jsonComparator.js
 
 /**
+ * Detecta el tipo de dato de un valor
+ * @param {*} value - Valor a analizar
+ * @returns {string} Tipo detectado
+ */
+const detectType = (value) => {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) return 'array';
+  if (typeof value === 'object') return 'object';
+  if (typeof value === 'string') {
+    // Detectar subtipos de string
+    if (isDateString(value)) return 'date';
+    if (isEmailString(value)) return 'email';
+    if (isUrlString(value)) return 'url';
+    return 'string';
+  }
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? 'integer' : 'number';
+  }
+  return typeof value;
+};
+
+/**
+ * Utilidades para detectar subtipos de string
+ */
+const isDateString = (str) => {
+  const dateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+  return dateRegex.test(str);
+};
+
+const isEmailString = (str) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(str);
+};
+
+const isUrlString = (str) => {
+  try {
+    new URL(str);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Recorre recursivamente un objeto JSON
+ * @param {*} obj - Objeto a recorrer
+ * @param {string} currentPath - Path actual
+ * @param {Function} callback - Función llamada por cada propiedad
+ */
+const traverseObject = (obj, currentPath, callback) => {
+  if (obj === null || obj === undefined) {
+    return;
+  }
+
+  const level = currentPath ? currentPath.split('.').length : 0;
+
+  if (typeof obj === 'object' && !Array.isArray(obj)) {
+    // Objeto normal
+    Object.keys(obj).forEach(key => {
+      const value = obj[key];
+      const path = currentPath ? `${currentPath}.${key}` : key;
+      
+      callback(path, value, key, level);
+      
+      // Recursión para objetos anidados
+      if (typeof value === 'object' && value !== null) {
+        traverseObject(value, path, callback);
+      }
+    });
+  } else if (Array.isArray(obj) && obj.length > 0) {
+    // Array con elementos
+    const firstElement = obj[0];
+    if (typeof firstElement === 'object' && firstElement !== null) {
+      // Array de objetos - analizar estructura del primer elemento
+      const arrayPath = currentPath + '[0]';
+      traverseObject(firstElement, arrayPath, callback);
+    }
+  }
+};
+
+/**
+ * Determina el status de una propiedad basado en su frecuencia
+ * @param {Object} property - Propiedad a evaluar
+ * @returns {string} Status de la propiedad
+ */
+const getPropertyStatus = (property) => {
+  if (property.isRequired) return 'required';
+  if (property.frequency === 1) return 'rare';
+  if (property.frequencyPercent >= 75) return 'common';
+  if (property.frequencyPercent >= 50) return 'occasional';
+  return 'rare';
+};
+
+/**
+ * Construye estructura jerárquica a partir del mapa de propiedades
+ * @param {Object} propertyMap - Mapa de propiedades planas
+ * @returns {Object} Estructura jerárquica
+ */
+const buildHierarchicalStructure = (propertyMap) => {
+  const hierarchy = {};
+  const pathArray = Object.keys(propertyMap).sort();
+
+  pathArray.forEach(path => {
+    const property = propertyMap[path];
+    const parts = path.split('.');
+    
+    // Crear entrada jerárquica
+    const hierarchicalEntry = {
+      ...property,
+      children: [],
+      isExpanded: property.level < 2, // Auto-expandir primeros 2 niveles
+      hasChildren: false
+    };
+
+    // Determinar si tiene hijos
+    const childPaths = pathArray.filter(p => 
+      p.startsWith(path + '.') && 
+      p.split('.').length === parts.length + 1
+    );
+    
+    hierarchicalEntry.hasChildren = childPaths.length > 0;
+    hierarchy[path] = hierarchicalEntry;
+  });
+
+  return hierarchy;
+};
+
+/**
  * Algoritmo principal para comparar múltiples estructuras JSON
  * @param {Array} jsonArray - Array de objetos JSON con {id, name, content}
  * @returns {Object} Estructura de comparación jerárquica
@@ -91,135 +220,6 @@ export const mergeJSONStructures = (jsonArray) => {
 
   // 3. Construir estructura jerárquica
   return buildHierarchicalStructure(result);
-};
-
-/**
- * Recorre recursivamente un objeto JSON
- * @param {*} obj - Objeto a recorrer
- * @param {string} currentPath - Path actual
- * @param {Function} callback - Función llamada por cada propiedad
- */
-const traverseObject = (obj, currentPath, callback) => {
-  if (obj === null || obj === undefined) {
-    return;
-  }
-
-  const level = currentPath ? currentPath.split('.').length : 0;
-
-  if (typeof obj === 'object' && !Array.isArray(obj)) {
-    // Objeto normal
-    Object.keys(obj).forEach(key => {
-      const value = obj[key];
-      const path = currentPath ? `${currentPath}.${key}` : key;
-      
-      callback(path, value, key, level);
-      
-      // Recursión para objetos anidados
-      if (typeof value === 'object' && value !== null) {
-        traverseObject(value, path, callback);
-      }
-    });
-  } else if (Array.isArray(obj) && obj.length > 0) {
-    // Array con elementos
-    const firstElement = obj[0];
-    if (typeof firstElement === 'object' && firstElement !== null) {
-      // Array de objetos - analizar estructura del primer elemento
-      const arrayPath = currentPath + '[0]';
-      traverseObject(firstElement, arrayPath, callback);
-    }
-  }
-};
-
-/**
- * Detecta el tipo de dato de un valor
- * @param {*} value - Valor a analizar
- * @returns {string} Tipo detectado
- */
-const detectType = (value) => {
-  if (value === null) return 'null';
-  if (value === undefined) return 'undefined';
-  if (Array.isArray(value)) return 'array';
-  if (typeof value === 'object') return 'object';
-  if (typeof value === 'string') {
-    // Detectar subtipos de string
-    if (isDateString(value)) return 'date';
-    if (isEmailString(value)) return 'email';
-    if (isUrlString(value)) return 'url';
-    return 'string';
-  }
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? 'integer' : 'number';
-  }
-  return typeof value;
-};
-
-/**
- * Determina el status de una propiedad basado en su frecuencia
- * @param {Object} property - Propiedad a evaluar
- * @returns {string} Status de la propiedad
- */
-const getPropertyStatus = (property) => {
-  if (property.isRequired) return 'required';
-  if (property.frequency === 1) return 'rare';
-  if (property.frequencyPercent >= 75) return 'common';
-  if (property.frequencyPercent >= 50) return 'occasional';
-  return 'rare';
-};
-
-/**
- * Construye estructura jerárquica a partir del mapa de propiedades
- * @param {Object} propertyMap - Mapa de propiedades planas
- * @returns {Object} Estructura jerárquica
- */
-const buildHierarchicalStructure = (propertyMap) => {
-  const hierarchy = {};
-  const pathArray = Object.keys(propertyMap).sort();
-
-  pathArray.forEach(path => {
-    const property = propertyMap[path];
-    const parts = path.split('.');
-    
-    // Crear entrada jerárquica
-    const hierarchicalEntry = {
-      ...property,
-      children: [],
-      isExpanded: property.level < 2, // Auto-expandir primeros 2 niveles
-      hasChildren: false
-    };
-
-    // Determinar si tiene hijos
-    const childPaths = pathArray.filter(p => 
-      p.startsWith(path + '.') && 
-      p.split('.').length === parts.length + 1
-    );
-    
-    hierarchicalEntry.hasChildren = childPaths.length > 0;
-    hierarchy[path] = hierarchicalEntry;
-  });
-
-  return hierarchy;
-};
-
-/**
- * Utilidades para detectar subtipos de string
- */
-const isDateString = (str) => {
-  const dateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
-  return dateRegex.test(str);
-};
-
-const isEmailString = (str) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(str);
-};
-
-const isUrlString = (str) => {
-  try {
-    new URL(str);
-    return true;
-  } catch {
-    return false;
-  }
 };
 
 /**

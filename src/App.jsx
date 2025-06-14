@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import './App.css';
 import FileUploader from './components/FileUploader';
 import './components/FileUploader.css';
+import PropertyTree from './components/PropertyTree';
 import { useJSONComparison } from './hooks/useJSONComparison';
 
 const App = () => {
@@ -250,53 +251,12 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* Área del árbol de propiedades */}
-                <div className="comparison-tree">
-                  <div className="tree-header">
-                    <h3>🌳 Estructura de Propiedades</h3>
-                    <div className="tree-controls">
-                      <button className="tree-btn">📂 Expandir Todo</button>
-                      <button className="tree-btn">📁 Contraer Todo</button>
-                      <button className="tree-btn">🔍 Filtrar</button>
-                    </div>
-                  </div>
-                  
-                  <div className="tree-placeholder">
-                    <div className="placeholder-content">
-                      <h4>🚀 PropertyTree Component</h4>
-                      <p>Aquí se mostrará el árbol interactivo de propiedades con:</p>
-                      <ul>
-                        <li>🎨 Colores jerárquicos por nivel</li>
-                        <li>📊 Indicadores de frecuencia</li>
-                        <li>✅ Status de requerido/opcional</li>
-                        <li>🔄 Expand/collapse por nodo</li>
-                        <li>☑️ Selección para template builder</li>
-                      </ul>
-                      
-                      {/* Preview de datos */}
-                      <div className="data-preview">
-                        <h5>📋 Vista previa de datos procesados:</h5>
-                        <div className="property-sample">
-                          {Object.entries(comparisonResult || {}).slice(0, 5).map(([path, property]) => (
-                            <div key={path} className="sample-property">
-                              <span className="sample-path">{path}</span>
-                              <span className="sample-type">({property.type})</span>
-                              <span className="sample-freq">{property.frequencyText}</span>
-                              <span className={`sample-status ${property.status}`}>
-                                {property.isRequired ? '✅' : '❓'}
-                              </span>
-                            </div>
-                          ))}
-                          {Object.keys(comparisonResult || {}).length > 5 && (
-                            <div className="sample-more">
-                              ...y {Object.keys(comparisonResult).length - 5} propiedades más
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                {/* PropertyTree Component - VERSIÓN INTERACTIVA */}
+                <PropertyTree 
+                  comparisonResult={comparisonResult}
+                  selectedProperties={selectedProperties}
+                  onPropertyToggle={handlePropertyToggle}
+                />
               </div>
             ) : (
               <div className="no-comparison">
