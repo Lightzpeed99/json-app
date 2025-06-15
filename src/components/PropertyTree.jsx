@@ -3,9 +3,12 @@ import React, { useState, useMemo } from 'react';
 const PropertyTree = ({ 
   comparisonResult, 
   selectedProperties = new Set(), 
-  onPropertyToggle = () => {} 
+  onPropertyToggle = () => {},
+  arrayConfig = {},
+  onArrayCountChange = () => {}
 }) => {
   const [searchText, setSearchText] = useState('');
+  const [arrayTooltip, setArrayTooltip] = useState({ visible: false, arrayPath: '', x: 0, y: 0 });
 
   if (!comparisonResult) {
     return (
@@ -40,14 +43,104 @@ const PropertyTree = ({
       .sort((a, b) => a.path.localeCompare(b.path));
   }, [filteredProperties, selectedProperties]);
 
+  // Detectar arrays configurables
+  const detectableArrays = useMemo(() => {
+    const arrays = new Set();
+    Array.from(selectedProperties).forEach(path => {
+      if (path.includes('[0]')) {
+        const arrayPath = path.split('[0]')[0].replace(/\.$/, '');
+        arrays.add(arrayPath);
+      }
+    });
+    return arrays;
+  }, [selectedProperties]);
+
+  // NUEVAS FUNCIONES DE SELECCIÓN RÁPIDA
+  const handleSelectAll = () => {
+    const allPaths = Object.keys(comparisonResult);
+    allPaths.forEach(path => {
+      if (!selectedProperties.has(path)) {
+        onPropertyToggle(path);
+      }
+    });
+  };
+
+  const handleSelectNone = () => {
+    Array.from(selectedProperties).forEach(path => {
+      onPropertyToggle(path);
+    });
+  };
+
+  const handleSelectByLevel = (level) => {
+    const levelPaths = Object.entries(comparisonResult)
+      .filter(([_, property]) => property.level === level)
+      .map(([path]) => path);
+    
+    levelPaths.forEach(path => {
+      if (!selectedProperties.has(path)) {
+        onPropertyToggle(path);
+      }
+    });
+  };
+
+  const handleDeselectByLevel = (level) => {
+    const levelPaths = Object.entries(comparisonResult)
+      .filter(([_, property]) => property.level === level)
+      .map(([path]) => path);
+    
+    levelPaths.forEach(path => {
+      if (selectedProperties.has(path)) {
+        onPropertyToggle(path);
+      }
+    });
+  };
+
+  const handleSelectObjects = () => {
+    const objectPaths = Object.entries(comparisonResult)
+      .filter(([_, property]) => property.type === 'object')
+      .map(([path]) => path);
+    
+    objectPaths.forEach(path => {
+      if (!selectedProperties.has(path)) {
+        onPropertyToggle(path);
+      }
+    });
+  };
+
+  // TOOLTIP DE ARRAYS
+  const handleArrayClick = (arrayPath, event) => {
+    event.stopPropagation();
+    const rect = event.target.getBoundingClientRect();
+    setArrayTooltip({
+      visible: true,
+      arrayPath,
+      x: rect.left,
+      y: rect.bottom + 5
+    });
+  };
+
+  const handleArrayCountSubmit = (newCount) => {
+    if (newCount && newCount > 0) {
+      onArrayCountChange(arrayTooltip.arrayPath, parseInt(newCount));
+    }
+    setArrayTooltip({ visible: false, arrayPath: '', x: 0, y: 0 });
+  };
+
   // Handlers
   const handlePropertySelect = (path) => {
     onPropertyToggle(path);
   };
 
+  // Verificar si una propiedad es un array configurable
+  const isConfigurableArray = (property) => {
+    return property.type === 'array' && detectableArrays.has(property.path);
+  };
+
   // Renderizar nodo individual
   const renderProperty = (property, index) => {
     const levelColor = getLevelColor(property.level || 0);
+    const isArray = isConfigurableArray(property);
+    const currentCount = arrayConfig[property.path]?.count || 2;
     
     return (
       <div 
@@ -92,6 +185,29 @@ const PropertyTree = ({
               }}>
                 {property.key}
               </span>
+
+              {/* NUEVO: Indicador de array configurable */}
+              {isArray && (
+                <span 
+                  onClick={(e) => handleArrayClick(property.path, e)}
+                  style={{
+                    background: '#06b6d4',
+                    color: 'white',
+                    padding: '0.125rem 0.375rem',
+                    borderRadius: '12px',
+                    fontSize: '0.7rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Click para configurar cantidad de elementos"
+                >
+                  🔢 {currentCount}
+                </span>
+              )}
               
               <span style={{
                 background: '#475569',
@@ -216,9 +332,12 @@ const PropertyTree = ({
   const requiredCount = propertiesArray.filter(p => p.isRequired).length;
   const optionalCount = totalCount - requiredCount;
 
+  // Obtener niveles disponibles
+  const availableLevels = [...new Set(Object.values(comparisonResult).map(p => p.level))].sort();
+
   return (
-    <div style={{ padding: '1rem' }}>
-      {/* Header con filtros */}
+    <div style={{ padding: '1rem', position: 'relative' }}>
+      {/* Header con filtros y controles */}
       <div style={{ marginBottom: '1.5rem' }}>
         <div style={{ 
           display: 'flex', 
@@ -244,6 +363,52 @@ const PropertyTree = ({
             {selectedCount > 0 && (
               <span style={{ color: '#60a5fa' }}>{selectedCount} seleccionadas</span>
             )}
+          </div>
+        </div>
+
+        {/* NUEVOS: Controles de selección rápida */}
+        <div style={{ 
+          marginBottom: '1rem',
+          padding: '1rem',
+          background: '#1e293b',
+          borderRadius: '8px',
+          border: '1px solid #475569'
+        }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+            <span style={{ color: '#cbd5e1', fontSize: '0.9rem', marginRight: '0.5rem' }}>
+              Selección rápida:
+            </span>
+            
+            {/* Botones de selección */}
+            <button onClick={handleSelectAll} style={buttonStyle}>Todas</button>
+            
+            {availableLevels.map(level => (
+              <button 
+                key={`select-${level}`}
+                onClick={() => handleSelectByLevel(level)} 
+                style={buttonStyle}
+              >
+                Nivel {level}
+              </button>
+            ))}
+            
+            <button onClick={handleSelectObjects} style={buttonStyle}>Objetos</button>
+            
+            {/* Separador */}
+            <div style={{ height: '20px', width: '1px', background: '#475569', margin: '0 0.5rem' }}></div>
+            
+            {/* Botones de deselección */}
+            <button onClick={handleSelectNone} style={buttonStyleRed}>Ninguna</button>
+            
+            {availableLevels.map(level => (
+              <button 
+                key={`deselect-${level}`}
+                onClick={() => handleDeselectByLevel(level)} 
+                style={buttonStyleRed}
+              >
+                Des-Nivel {level}
+              </button>
+            ))}
           </div>
         </div>
         
@@ -319,8 +484,117 @@ const PropertyTree = ({
           </div>
         )}
       </div>
+
+      {/* NUEVO: Tooltip para configurar arrays */}
+      {arrayTooltip.visible && (
+        <ArrayTooltip 
+          x={arrayTooltip.x}
+          y={arrayTooltip.y}
+          arrayPath={arrayTooltip.arrayPath}
+          currentCount={arrayConfig[arrayTooltip.arrayPath]?.count || 2}
+          onSubmit={handleArrayCountSubmit}
+          onClose={() => setArrayTooltip({ visible: false, arrayPath: '', x: 0, y: 0 })}
+        />
+      )}
     </div>
   );
+};
+
+// Componente Tooltip para arrays
+const ArrayTooltip = ({ x, y, arrayPath, currentCount, onSubmit, onClose }) => {
+  const [count, setCount] = useState(currentCount.toString());
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit(count);
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      left: x,
+      top: y,
+      background: '#0f172a',
+      border: '2px solid #06b6d4',
+      borderRadius: '8px',
+      padding: '1rem',
+      boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+      zIndex: 1000,
+      minWidth: '200px'
+    }}>
+      <div style={{ color: '#f8fafc', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+        Configurar array: <strong>{arrayPath}</strong>
+      </div>
+      
+      <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <input
+          type="number"
+          min="1"
+          max="10"
+          value={count}
+          onChange={(e) => setCount(e.target.value)}
+          style={{
+            padding: '0.25rem 0.5rem',
+            background: '#334155',
+            border: '1px solid #475569',
+            borderRadius: '4px',
+            color: '#f8fafc',
+            width: '60px',
+            textAlign: 'center'
+          }}
+          autoFocus
+        />
+        <span style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>elementos</span>
+        
+        <button type="submit" style={{
+          background: '#06b6d4',
+          border: 'none',
+          color: 'white',
+          padding: '0.25rem 0.5rem',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          fontSize: '0.8rem'
+        }}>
+          ✓
+        </button>
+        
+        <button type="button" onClick={onClose} style={{
+          background: '#dc2626',
+          border: 'none',
+          color: 'white',
+          padding: '0.25rem 0.5rem',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          fontSize: '0.8rem'
+        }}>
+          ✕
+        </button>
+      </form>
+    </div>
+  );
+};
+
+// Estilos para botones
+const buttonStyle = {
+  background: '#2563eb',
+  border: 'none',
+  color: 'white',
+  padding: '0.375rem 0.75rem',
+  borderRadius: '6px',
+  cursor: 'pointer',
+  fontSize: '0.8rem',
+  transition: 'all 0.15s ease'
+};
+
+const buttonStyleRed = {
+  background: '#dc2626',
+  border: 'none',
+  color: 'white',
+  padding: '0.375rem 0.75rem',
+  borderRadius: '6px',
+  cursor: 'pointer',
+  fontSize: '0.8rem',
+  transition: 'all 0.15s ease'
 };
 
 export default PropertyTree;

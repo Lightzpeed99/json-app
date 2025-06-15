@@ -63,6 +63,11 @@ const App = () => {
     });
   };
 
+  // NUEVO: Handler para configuración de arrays
+  const handleArrayCountChange = (arrayPath, count) => {
+    setArrayCount(arrayPath, count);
+  };
+
   // Handlers para template builder
   const handleExportTemplate = async () => {
     const filename = templateName || `template_${new Date().toISOString().slice(0, 10)}`;
@@ -216,7 +221,7 @@ const App = () => {
                     🏗️ {stats.totalProperties} propiedades encontradas
                   </span>
                 )}
-              </div>
+</div>
             )}
           </div>
 
@@ -291,11 +296,13 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* PropertyTree Component */}
+                {/* PropertyTree Component - NUEVAS PROPS AGREGADAS */}
                 <PropertyTree 
                   comparisonResult={comparisonResult}
                   selectedProperties={selectedProperties}
                   onPropertyToggle={handlePropertyToggle}
+                  arrayConfig={arrayConfig}
+                  onArrayCountChange={handleArrayCountChange}
                 />
               </div>
             ) : (

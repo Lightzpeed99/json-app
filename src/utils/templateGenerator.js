@@ -27,7 +27,7 @@ export const generateTemplate = (
     return {};
   }
 
-  // Convertir Set a Array y ordenar por path para construir jerárquicamente
+  // Convertir Set a Array y ordenar por path
   const selectedPaths = Array.from(selectedProperties).sort();
 
   // Construir el template
@@ -44,13 +44,13 @@ export const generateTemplate = (
 };
 
 /**
- * Busca el valor real para un path específico en los JSONs cargados
- * @param {string} path - Path de la propiedad (ej: "CustomerName", "Items[0].PartNumber")
- * @param {Array} validJSONs - Array de JSONs válidos
- * @returns {*} Valor encontrado o undefined
+ * NUEVA: Busca valor con cascada de archivos (primero → segundo → tercero)
+ * @param {string} path - Path de la propiedad
+ * @param {Array} validJSONs - Array de JSONs válidos ordenados por prioridad
+ * @returns {*} Valor encontrado o placeholder
  */
 const findValueForPath = (path, validJSONs) => {
-  // Buscar en orden: primero en el primer JSON, luego en el segundo, etc.
+  // Cascada: buscar en orden de prioridad de archivos
   for (const json of validJSONs) {
     const value = getValueByPath(json.content, path);
     if (value !== undefined && value !== null) {
@@ -58,12 +58,12 @@ const findValueForPath = (path, validJSONs) => {
     }
   }
 
-  // Si no se encuentra, retornar un valor por defecto basado en el tipo
-  return getDefaultValueForPath(path, validJSONs);
+  // Si no se encuentra en ningún archivo, retornar placeholder
+  return getPlaceholderByPath(path);
 };
 
 /**
- * Obtiene el valor de un objeto usando un path (ej: "Items[0].PartNumber")
+ * Obtiene el valor de un objeto usando un path
  * @param {Object} obj - Objeto del cual extraer el valor
  * @param {string} path - Path de la propiedad
  * @returns {*} Valor encontrado o undefined
@@ -72,167 +72,142 @@ const getValueByPath = (obj, path) => {
   if (!obj || typeof obj !== "object") return undefined;
 
   try {
-    // Manejar arrays de objetos: Items[0].PartNumber
-    if (path.includes("[0]")) {
-      const parts = path.split(".");
-      let current = obj;
+    const parts = path.split(".");
+    let current = obj;
 
-      for (const part of parts) {
-        if (part.includes("[0]")) {
-          // Extraer el nombre del array: "Items[0]" -> "Items"
-          const arrayName = part.replace("[0]", "");
-          current = current[arrayName];
+    for (const part of parts) {
+      if (part.includes("[0]")) {
+        // Array: extraer nombre y acceder al primer elemento
+        const arrayName = part.replace("[0]", "");
+        current = current[arrayName];
 
-          if (Array.isArray(current) && current.length > 0) {
-            current = current[0]; // Tomar el primer elemento
-          } else {
-            return undefined;
-          }
+        if (Array.isArray(current) && current.length > 0) {
+          current = current[0];
         } else {
-          current = current[part];
-          if (current === undefined) return undefined;
+          return undefined;
         }
+      } else {
+        // Propiedad normal
+        current = current[part];
+        if (current === undefined) return undefined;
       }
-
-      return current;
-    } else {
-      // Path simple: "CustomerName"
-      return obj[path];
     }
+
+    return current;
   } catch (error) {
     return undefined;
   }
 };
 
 /**
- * Obtiene un valor por defecto cuando no se encuentra el valor real
+ * Genera placeholder basado en el path
  * @param {string} path - Path de la propiedad
- * @param {Array} validJSONs - Array de JSONs válidos para inferir tipo
- * @returns {*} Valor por defecto
+ * @returns {*} Valor placeholder apropiado
  */
-const getDefaultValueForPath = (path, validJSONs) => {
-  // Intentar inferir el tipo basado en otros valores encontrados
-  for (const json of validJSONs) {
-    const value = getValueByPath(json.content, path);
-    if (value !== undefined && value !== null) {
-      return getDefaultValueByType(value);
-    }
-  }
-
-  // Valores por defecto según el nombre del campo
+const getPlaceholderByPath = (path) => {
   const lowerPath = path.toLowerCase();
 
-  if (lowerPath.includes("number")) return "";
-  if (lowerPath.includes("name")) return "";
-  if (lowerPath.includes("address")) return "";
-  if (lowerPath.includes("city")) return "";
-  if (lowerPath.includes("state")) return "";
-  if (lowerPath.includes("country")) return "";
-  if (lowerPath.includes("code")) return "";
-  if (lowerPath.includes("date")) return "";
-  if (lowerPath.includes("quantity")) return 0;
-  if (lowerPath.includes("line")) return "";
-  if (lowerPath.includes("area")) return "";
-  if (lowerPath.includes("location")) return "";
-  if (lowerPath.includes("order")) return "";
-  if (lowerPath.includes("class")) return "";
-  if (lowerPath.includes("items")) return [];
+  // Placeholders específicos según tipo de campo
+  if (lowerPath.includes("email")) return "example@domain.com";
+  if (lowerPath.includes("phone")) return "1234567890";
+  if (lowerPath.includes("date")) return "2024-01-01";
+  if (lowerPath.includes("amount") || lowerPath.includes("value")) return 0;
+  if (lowerPath.includes("currency")) return "USD";
+  if (lowerPath.includes("code")) return "CODE";
+  if (lowerPath.includes("number")) return "123456789";
+  if (lowerPath.includes("address") || lowerPath.includes("street")) return "";
+  if (lowerPath.includes("city")) return "City";
+  if (lowerPath.includes("state")) return "State";
+  if (lowerPath.includes("country")) return "US";
+  if (lowerPath.includes("name")) return "Name";
 
   return "";
 };
 
 /**
- * Obtiene un valor por defecto basado en el tipo del valor original
- * @param {*} originalValue - Valor original para inferir el tipo
- * @returns {*} Valor por defecto del mismo tipo
- */
-const getDefaultValueByType = (originalValue) => {
-  if (typeof originalValue === "string") return "";
-  if (typeof originalValue === "number") return 0;
-  if (typeof originalValue === "boolean") return false;
-  if (Array.isArray(originalValue)) return [];
-  if (typeof originalValue === "object") return {};
-  return "";
-};
-
-/**
- * Establece una propiedad anidada en un objeto usando un path
+ * Establece una propiedad anidada en un objeto
  * @param {Object} obj - Objeto donde establecer la propiedad
  * @param {string} path - Path de la propiedad
  * @param {*} value - Valor a establecer
  */
 const setNestedProperty = (obj, path, value) => {
-  // Manejar arrays: Items[0].PartNumber
-  if (path.includes("[0]")) {
-    const parts = path.split(".");
-    let current = obj;
+  const parts = path.split(".");
+  let current = obj;
 
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    const isLast = i === parts.length - 1;
 
-      if (part.includes("[0]")) {
-        // Es un array: "Items[0]"
-        const arrayName = part.replace("[0]", "");
+    if (part.includes("[0]")) {
+      // Array: crear estructura de array
+      const arrayName = part.replace("[0]", "");
 
-        if (!current[arrayName]) {
-          current[arrayName] = [];
-        }
+      if (!current[arrayName]) {
+        current[arrayName] = [];
+      }
 
-        if (current[arrayName].length === 0) {
-          current[arrayName].push({});
-        }
+      if (current[arrayName].length === 0) {
+        current[arrayName].push({});
+      }
 
-        current = current[arrayName][0];
+      current = current[arrayName][0];
+    } else {
+      // Propiedad normal
+      if (isLast) {
+        current[part] = value;
       } else {
-        // Es una propiedad normal
-        if (isLast) {
-          current[part] = value;
-        } else {
-          if (!current[part]) {
-            current[part] = {};
-          }
-          current = current[part];
+        if (!current[part]) {
+          current[part] = {};
         }
+        current = current[part];
       }
     }
-  } else {
-    // Path simple
-    obj[path] = value;
   }
 };
 
 /**
- * Genera configuración de arrays para el template
+ * CORREGIDA: Detecta solo arrays reales del JSON
  * @param {Set} selectedProperties - Propiedades seleccionadas
  * @param {Object} comparisonResult - Resultado de comparación
- * @returns {Object} Configuración de arrays
+ * @returns {Object} Configuración de arrays reales
  */
 export const generateArrayConfig = (selectedProperties, comparisonResult) => {
   const arrayConfig = {};
+  const detectedArrays = new Set();
 
+  // Detectar arrays reales analizando las propiedades seleccionadas
   Array.from(selectedProperties).forEach((path) => {
     if (path.includes("[0]")) {
-      const arrayPath = path.split("[0]")[0];
-      if (!arrayConfig[arrayPath]) {
-        arrayConfig[arrayPath] = {
-          count: 1, // Por defecto 1 elemento
-          properties: [],
-        };
+      // Extraer el path completo del array
+      const pathParts = path.split("[0]");
+      if (pathParts.length >= 2) {
+        // El array está en pathParts[0], puede incluir path anidado
+        const arrayFullPath = pathParts[0];
+        detectedArrays.add(arrayFullPath);
       }
-      arrayConfig[arrayPath].properties.push(path);
     }
+  });
+
+  // Crear configuración para cada array detectado
+  detectedArrays.forEach((arrayPath) => {
+    const cleanPath = arrayPath.replace(/\.$/, ""); // Remover punto final si existe
+    arrayConfig[cleanPath] = {
+      count: 2, // Por defecto 2 elementos
+      properties: Array.from(selectedProperties).filter((prop) =>
+        prop.startsWith(arrayPath)
+      ),
+    };
   });
 
   return arrayConfig;
 };
 
 /**
- * Genera template con configuración de arrays personalizada
+ * CORREGIDA: Expande solo arrays específicos con propiedades seleccionadas
  * @param {Set} selectedProperties - Propiedades seleccionadas
  * @param {Array} loadedJSONs - JSONs cargados
- * @param {Object} arrayConfig - Configuración de arrays {arrayPath: {count: number}}
- * @returns {Object} Template con arrays configurados
+ * @param {Object} arrayConfig - Configuración de arrays
+ * @returns {Object} Template con arrays expandidos
  */
 export const generateTemplateWithArrays = (
   selectedProperties,
@@ -241,23 +216,154 @@ export const generateTemplateWithArrays = (
 ) => {
   const baseTemplate = generateTemplate(selectedProperties, loadedJSONs);
 
-  // Aplicar configuración de arrays
+  // Expandir cada array específico según configuración
   Object.entries(arrayConfig).forEach(([arrayPath, config]) => {
-    const arrayValue = getValueByPath(baseTemplate, arrayPath);
-
-    if (Array.isArray(arrayValue) && arrayValue.length > 0) {
-      const itemTemplate = arrayValue[0];
-      const newArray = [];
-
-      for (let i = 0; i < config.count; i++) {
-        newArray.push({ ...itemTemplate });
-      }
-
-      setNestedProperty(baseTemplate, arrayPath, newArray);
-    }
+    expandSpecificArraySelective(
+      baseTemplate,
+      arrayPath,
+      config.count,
+      selectedProperties,
+      loadedJSONs
+    );
   });
 
   return baseTemplate;
+};
+
+/**
+ * NUEVA: Expande array con solo propiedades específicamente seleccionadas
+ * @param {Object} template - Template base
+ * @param {string} arrayPath - Path del array a expandir
+ * @param {number} count - Cantidad de elementos deseados
+ * @param {Set} selectedProperties - Propiedades seleccionadas
+ * @param {Array} loadedJSONs - JSONs para cascada de datos
+ */
+const expandSpecificArraySelective = (
+  template,
+  arrayPath,
+  count,
+  selectedProperties,
+  loadedJSONs
+) => {
+  if (!arrayPath || count < 1) return;
+
+  // Navegar hasta el array usando el path
+  const pathParts = arrayPath === "" ? [] : arrayPath.split(".");
+  let current = template;
+
+  // Navegar hasta el contenedor del array
+  for (let i = 0; i < pathParts.length - 1; i++) {
+    const part = pathParts[i];
+    if (!current[part]) return; // Array no existe
+    current = current[part];
+  }
+
+  // Obtener el nombre final del array
+  const finalArrayName =
+    pathParts.length > 0 ? pathParts[pathParts.length - 1] : null;
+
+  if (finalArrayName) {
+    // Array anidado
+    if (
+      current[finalArrayName] &&
+      Array.isArray(current[finalArrayName]) &&
+      current[finalArrayName].length > 0
+    ) {
+      // NUEVO: Solo usar propiedades específicamente seleccionadas
+      const newArray = createSelectiveArrayElements(
+        arrayPath,
+        count,
+        selectedProperties,
+        loadedJSONs
+      );
+      current[finalArrayName] = newArray;
+    }
+  } else {
+    // Arrays en nivel raíz
+    Object.keys(current).forEach((key) => {
+      if (Array.isArray(current[key]) && current[key].length > 0) {
+        const newArray = createSelectiveArrayElements(
+          key,
+          count,
+          selectedProperties,
+          loadedJSONs
+        );
+        current[key] = newArray;
+      }
+    });
+  }
+};
+
+/**
+ * NUEVA: Crea elementos de array con solo propiedades seleccionadas
+ * @param {string} arrayPath - Path del array
+ * @param {number} count - Cantidad de elementos
+ * @param {Set} selectedProperties - Propiedades seleccionadas
+ * @param {Array} loadedJSONs - JSONs para cascada de datos
+ * @returns {Array} Array con elementos que contienen solo propiedades seleccionadas
+ */
+const createSelectiveArrayElements = (
+  arrayPath,
+  count,
+  selectedProperties,
+  loadedJSONs
+) => {
+  const elements = [];
+
+  // Buscar todas las propiedades seleccionadas que pertenecen a este array
+  const arrayProperties = Array.from(selectedProperties).filter(
+    (prop) =>
+      prop.includes(`${arrayPath}[0].`) ||
+      (arrayPath === "" && prop.includes("[0]."))
+  );
+
+  for (let i = 0; i < count; i++) {
+    const element = {};
+
+    // Para cada propiedad del array, extraer solo el valor específico
+    arrayProperties.forEach((fullPath) => {
+      // Extraer la propiedad relativa dentro del elemento del array
+      const arrayPrefix = arrayPath ? `${arrayPath}[0].` : "[0].";
+      const relativePath = fullPath.replace(arrayPrefix, "");
+
+      // Buscar el valor con cascada
+      const value = findValueForPath(fullPath, loadedJSONs);
+
+      // Establecer la propiedad en el elemento
+      if (value !== undefined) {
+        setNestedPropertyInObject(element, relativePath, value);
+      }
+    });
+
+    elements.push(element);
+  }
+
+  return elements;
+};
+
+/**
+ * NUEVA: Establece propiedad anidada en un objeto simple (sin arrays)
+ * @param {Object} obj - Objeto destino
+ * @param {string} path - Path relativo
+ * @param {*} value - Valor a establecer
+ */
+const setNestedPropertyInObject = (obj, path, value) => {
+  const parts = path.split(".");
+  let current = obj;
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    const isLast = i === parts.length - 1;
+
+    if (isLast) {
+      current[part] = value;
+    } else {
+      if (!current[part]) {
+        current[part] = {};
+      }
+      current = current[part];
+    }
+  }
 };
 
 /**
