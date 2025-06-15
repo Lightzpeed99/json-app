@@ -4,6 +4,7 @@ import FileUploader from './components/FileUploader';
 import './components/FileUploader.css';
 import PropertyTree from './components/PropertyTree';
 import { useJSONComparison } from './hooks/useJSONComparison';
+import { useTemplateBuilder } from './hooks/useTemplateBuilder';
 
 const App = () => {
   // Estado global de la aplicación
@@ -20,6 +21,26 @@ const App = () => {
     hasComparison,
     validationInfo
   } = useJSONComparison(loadedJSONs);
+
+  // Hook de template builder
+  const {
+    finalTemplate,
+    formattedTemplate,
+    templateStats,
+    arrayConfig,
+    templateName,
+    setArrayCount,
+    setTemplateName,
+    getAvailableArrays,
+    getArrayCount,
+    exportAsFile,
+    copyToClipboard,
+    validateTemplate,
+    getPreviewWithExamples,
+    hasTemplate,
+    hasArrays,
+    isValid
+  } = useTemplateBuilder(selectedProperties, loadedJSONs, comparisonResult);
 
   // Handlers para gestión de JSONs
   const handleFilesLoaded = (files) => {
@@ -42,9 +63,25 @@ const App = () => {
     });
   };
 
-  const handleExportTemplate = (template) => {
-    // TODO: Implement template export
-    console.log('Exporting template:', template);
+  // Handlers para template builder
+  const handleExportTemplate = async () => {
+    const filename = templateName || `template_${new Date().toISOString().slice(0, 10)}`;
+    exportAsFile(filename);
+  };
+
+  const handleCopyToClipboard = async () => {
+    const success = await copyToClipboard();
+    if (success) {
+      // TODO: Mostrar toast de éxito
+      console.log('Template copiado al portapapeles');
+    } else {
+      // TODO: Mostrar toast de error
+      console.log('Error al copiar template');
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedProperties(new Set());
   };
 
   // Determinar clases del grid dinámicamente
@@ -59,6 +96,9 @@ const App = () => {
     }
     return classes;
   };
+
+  // Obtener preview del template
+  const templatePreview = getPreviewWithExamples();
 
   return (
     <div className="app">
@@ -251,7 +291,7 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* PropertyTree Component - VERSIÓN INTERACTIVA */}
+                {/* PropertyTree Component */}
                 <PropertyTree 
                   comparisonResult={comparisonResult}
                   selectedProperties={selectedProperties}
@@ -289,9 +329,75 @@ const App = () => {
             <div className="panel-content">
               {selectedProperties.size > 0 ? (
                 <div className="template-builder">
+                  {/* Header con estadísticas */}
+                  <div className="template-header">
+                    <h3>🎯 Template Generator</h3>
+                    <div className="template-meta">
+                      <span className="meta-item">
+                        📋 {selectedProperties.size} propiedades
+                      </span>
+                      {hasTemplate && (
+                        <span className="meta-item">
+                          🏗️ {templateStats?.totalProperties || 0} generadas
+                        </span>
+                      )}
+                      {hasArrays && (
+                        <span className="meta-item">
+                          📊 {getAvailableArrays().length} arrays
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Configuración del template */}
+                  <div className="template-config">
+                    <div className="config-group">
+                      <label>Nombre del template:</label>
+                      <input
+                        type="text"
+                        value={templateName}
+                        onChange={(e) => setTemplateName(e.target.value)}
+                        placeholder="Mi template personalizado"
+                        className="template-name-input"
+                      />
+                    </div>
+
+                    {/* Configuración de arrays */}
+                    {hasArrays && (
+                      <div className="config-group">
+                        <label>Configuración de Arrays:</label>
+                        <div className="array-configs">
+                          {getAvailableArrays().map(arrayPath => (
+                            <div key={arrayPath} className="array-config-item">
+                              <span className="array-name">{arrayPath}:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="10"
+                                value={getArrayCount(arrayPath)}
+                                onChange={(e) => setArrayCount(arrayPath, parseInt(e.target.value) || 1)}
+                                className="array-count-input"
+                              />
+                              <span className="array-label">elementos</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Propiedades seleccionadas */}
                   <div className="selected-properties">
-                    <h3>Propiedades Seleccionadas</h3>
+                    <div className="properties-header">
+                      <h4>Propiedades Seleccionadas</h4>
+                      <button 
+                        onClick={handleClearSelection}
+                        className="clear-selection-btn"
+                        title="Limpiar selección"
+                      >
+                        🗑️ Limpiar
+                      </button>
+                    </div>
                     <div className="properties-list">
                       {Array.from(selectedProperties).map(prop => (
                         <div key={prop} className="property-item">
@@ -310,14 +416,21 @@ const App = () => {
 
                   {/* Preview del JSON */}
                   <div className="json-preview">
-                    <h3>Preview del Template</h3>
+                    <div className="preview-header">
+                      <h4>Preview del Template</h4>
+                      {hasTemplate && (
+                        <div className="preview-status">
+                          {isValid ? (
+                            <span className="status-valid">✅ Válido</span>
+                          ) : (
+                            <span className="status-invalid">❌ Inválido</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <div className="preview-container">
                       <pre className="json-display">
-                        {JSON.stringify({ 
-                          // Placeholder template
-                          note: "Template basado en propiedades seleccionadas",
-                          selectedProperties: Array.from(selectedProperties)
-                        }, null, 2)}
+                        {hasTemplate ? formattedTemplate : '{\n  "message": "Selecciona propiedades para generar template"\n}'}
                       </pre>
                     </div>
                   </div>
@@ -326,29 +439,56 @@ const App = () => {
                   <div className="export-controls">
                     <button 
                       className="export-btn primary"
-                      onClick={() => handleExportTemplate({})}
+                      onClick={handleExportTemplate}
+                      disabled={!hasTemplate}
+                      title={hasTemplate ? "Descargar template como archivo JSON" : "Selecciona propiedades primero"}
                     >
                       📥 Descargar JSON
                     </button>
                     <button 
                       className="export-btn secondary"
-                      onClick={() => {
-                        // TODO: Copy to clipboard
-                        console.log('Copy to clipboard');
-                      }}
+                      onClick={handleCopyToClipboard}
+                      disabled={!hasTemplate}
+                      title={hasTemplate ? "Copiar template al portapapeles" : "Selecciona propiedades primero"}
                     >
                       📋 Copiar al portapapeles
                     </button>
                   </div>
+
+                  {/* Estadísticas del template */}
+                  {hasTemplate && templateStats && (
+                    <div className="template-statistics">
+                      <h4>📊 Estadísticas del Template</h4>
+                      <div className="stats-grid">
+                        <div className="stat-card">
+                          <span className="stat-number">{templateStats.totalProperties}</span>
+                          <span className="stat-label">Total</span>
+                        </div>
+                        <div className="stat-card">
+                          <span className="stat-number">{templateStats.primitiveProperties}</span>
+                          <span className="stat-label">Primitivas</span>
+                        </div>
+                        <div className="stat-card">
+                          <span className="stat-number">{templateStats.objectProperties}</span>
+                          <span className="stat-label">Objetos</span>
+                        </div>
+                        <div className="stat-card">
+                          <span className="stat-number">{templateStats.arrayProperties}</span>
+                          <span className="stat-label">Arrays</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="template-empty">
                   <h3>🎯 Construye tu Template</h3>
                   <p>Selecciona propiedades del panel central para:</p>
                   <ul>
-                    <li>Crear templates de request personalizados</li>
-                    <li>Configurar arrays con N elementos</li>
-                    <li>Exportar JSON estructurado</li>
+                    <li>Crear templates de request con <strong>datos reales</strong></li>
+                    <li>Configurar arrays con N elementos personalizados</li>
+                    <li>Exportar JSON estructurado y válido</li>
+                    <li>Generar documentación automática</li>
                   </ul>
                   
                   {hasComparison && (
@@ -358,6 +498,9 @@ const App = () => {
                       </p>
                       <p className="stats-hint">
                         ✅ <strong>{stats?.requiredProperties || 0}</strong> son requeridas (aparecen en todos los archivos)
+                      </p>
+                      <p className="stats-hint">
+                        🔥 <strong>Nuevo:</strong> Los templates usan datos reales de tus JSONs
                       </p>
                     </div>
                   )}
