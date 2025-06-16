@@ -1,9 +1,17 @@
 import React, { useState, useMemo } from 'react';
+import { 
+  buildTreeStructure, 
+  applySmartSelection,
+  isArrayParent,
+  hasChildren
+} from '../utils/smartSelection';
 
 const PropertyTree = ({ 
   comparisonResult, 
   selectedProperties = new Set(), 
   onPropertyToggle = () => {},
+  expandedPaths = new Set(),
+  onToggleExpanded = () => {},
   arrayConfig = {},
   onArrayCountChange = () => {}
 }) => {
@@ -32,16 +40,10 @@ const PropertyTree = ({
     );
   }, [comparisonResult, searchText]);
 
-  // Convertir a array y ordenar por path
-  const propertiesArray = useMemo(() => {
-    return Object.entries(filteredProperties)
-      .map(([path, property]) => ({
-        path,
-        ...property,
-        isSelected: selectedProperties.has(path)
-      }))
-      .sort((a, b) => a.path.localeCompare(b.path));
-  }, [filteredProperties, selectedProperties]);
+  // Construir estructura de árbol jerárquica
+  const treeNodes = useMemo(() => {
+    return buildTreeStructure(filteredProperties, expandedPaths);
+  }, [filteredProperties, expandedPaths]);
 
   // Detectar arrays configurables
   const detectableArrays = useMemo(() => {
@@ -107,6 +109,34 @@ const PropertyTree = ({
     });
   };
 
+  // NUEVA: Manejo de selección inteligente
+  const handleSmartPropertyToggle = (path) => {
+    const newSelection = applySmartSelection(path, selectedProperties, comparisonResult);
+    
+    // Aplicar cambios uno por uno para mantener consistencia
+    const currentPaths = Array.from(selectedProperties);
+    const newPaths = Array.from(newSelection);
+    
+    // Deseleccionar los que ya no están
+    currentPaths.forEach(currentPath => {
+      if (!newSelection.has(currentPath)) {
+        onPropertyToggle(currentPath);
+      }
+    });
+    
+    // Seleccionar los nuevos
+    newPaths.forEach(newPath => {
+      if (!selectedProperties.has(newPath)) {
+        onPropertyToggle(newPath);
+      }
+    });
+  };
+
+  // NUEVA: Manejo de expand/collapse
+  const handleToggleExpand = (path) => {
+    onToggleExpanded(path);
+  };
+
   // TOOLTIP DE ARRAYS
   const handleArrayClick = (arrayPath, event) => {
     event.stopPropagation();
@@ -126,169 +156,216 @@ const PropertyTree = ({
     setArrayTooltip({ visible: false, arrayPath: '', x: 0, y: 0 });
   };
 
-  // Handlers
-  const handlePropertySelect = (path) => {
-    onPropertyToggle(path);
-  };
-
   // Verificar si una propiedad es un array configurable
   const isConfigurableArray = (property) => {
     return property.type === 'array' && detectableArrays.has(property.path);
   };
 
-  // Renderizar nodo individual
-  const renderProperty = (property, index) => {
-    const levelColor = getLevelColor(property.level || 0);
-    const isArray = isConfigurableArray(property);
-    const currentCount = arrayConfig[property.path]?.count || 2;
+  // NUEVA: Renderizar nodo individual jerárquico
+  const renderTreeNode = (node, index) => {
+    const levelColor = getLevelColor(node.level || 0);
+    const isArray = isConfigurableArray(node);
+    const currentCount = arrayConfig[node.path]?.count || 2;
+    const isSelected = selectedProperties.has(node.path);
+    const canExpand = node.hasChildren;
+    const isExpanded = node.isExpanded;
     
     return (
       <div 
-        key={property.path}
+        key={node.path}
         style={{
-          padding: '0.75rem',
-          marginBottom: '4px',
-          background: levelColor.bg,
-          borderRadius: '6px',
-          borderLeft: `4px solid ${property.isRequired ? '#059669' : '#d97706'}`,
-          border: property.isSelected ? '2px solid #2563eb' : '1px solid #475569',
-          transition: 'all 0.15s ease',
-          marginLeft: `${(property.level || 0) * 20}px`
+          marginBottom: '2px',
+          marginLeft: `${(node.level || 0) * 20}px`
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {/* Checkbox */}
-          <input
-            type="checkbox"
-            checked={property.isSelected}
-            onChange={() => handlePropertySelect(property.path)}
-            style={{
-              cursor: 'pointer',
-              transform: 'scale(1.2)',
-              accentColor: '#2563eb'
-            }}
-          />
-          
-          {/* Property info */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem', 
-              marginBottom: '0.25rem',
-              flexWrap: 'wrap'
-            }}>
-              <span style={{ 
-                color: levelColor.text,
-                fontWeight: 600,
-                fontSize: '0.95rem'
+        <div style={{
+          padding: '0.75rem',
+          background: levelColor.bg,
+          borderRadius: '6px',
+          borderLeft: `4px solid ${node.isRequired ? '#059669' : '#d97706'}`,
+          border: isSelected ? '2px solid #2563eb' : '1px solid #475569',
+          transition: 'all 0.15s ease'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {/* NUEVO: Botón de expand/collapse */}
+            {canExpand && (
+              <button
+                onClick={() => handleToggleExpand(node.path)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#cbd5e1',
+                  cursor: 'pointer',
+                  padding: '0.25rem',
+                  borderRadius: '3px',
+                  transition: 'all 0.15s ease',
+                  minWidth: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.9rem'
+                }}
+                title={isExpanded ? 'Colapsar' : 'Expandir'}
+              >
+                {isExpanded ? '▼' : '▶'}
+              </button>
+            )}
+            
+            {/* Spacer si no tiene botón expand */}
+            {!canExpand && (
+              <div style={{ minWidth: '20px' }}></div>
+            )}
+            
+            {/* Checkbox con selección inteligente */}
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={() => handleSmartPropertyToggle(node.path)}
+              style={{
+                cursor: 'pointer',
+                transform: 'scale(1.2)',
+                accentColor: '#2563eb'
+              }}
+            />
+            
+            {/* Property info */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem', 
+                marginBottom: '0.25rem',
+                flexWrap: 'wrap'
               }}>
-                {property.key}
-              </span>
+                <span style={{ 
+                  color: levelColor.text,
+                  fontWeight: 600,
+                  fontSize: '0.95rem'
+                }}>
+                  {node.key}
+                </span>
 
-              {/* NUEVO: Indicador de array configurable */}
-              {isArray && (
-                <span 
-                  onClick={(e) => handleArrayClick(property.path, e)}
-                  style={{
-                    background: '#06b6d4',
+                {/* INDICADOR: Array configurable */}
+                {isArray && (
+                  <span 
+                    onClick={(e) => handleArrayClick(node.path, e)}
+                    style={{
+                      background: '#06b6d4',
+                      color: 'white',
+                      padding: '0.125rem 0.375rem',
+                      borderRadius: '12px',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title="Click para configurar cantidad de elementos"
+                  >
+                    🔢 {currentCount}
+                  </span>
+                )}
+
+                {/* INDICADOR: Array padre */}
+                {node.isArrayParent && (
+                  <span style={{
+                    background: '#8b5cf6',
                     color: 'white',
                     padding: '0.125rem 0.375rem',
                     borderRadius: '12px',
                     fontSize: '0.7rem',
                     fontWeight: 600,
-                    cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.25rem',
-                    transition: 'all 0.15s ease'
-                  }}
-                  title="Click para configurar cantidad de elementos"
-                >
-                  🔢 {currentCount}
-                </span>
-              )}
-              
-              <span style={{
-                background: '#475569',
-                padding: '0.125rem 0.5rem',
-                borderRadius: '12px',
-                fontSize: '0.75rem',
-                color: '#cbd5e1',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.25rem'
-              }}>
-                {getTypeIcon(property.type)} {property.type}
-              </span>
-              
-              <span style={{
-                background: property.isRequired ? '#059669' : '#d97706',
-                color: 'white',
-                padding: '0.125rem 0.5rem',
-                borderRadius: '12px',
-                fontSize: '0.75rem',
-                fontWeight: 600
-              }}>
-                {property.frequencyText}
-              </span>
-
-              {property.frequencyPercent && (
+                    gap: '0.25rem'
+                  }}>
+                    📋 Array
+                  </span>
+                )}
+                
                 <span style={{
-                  background: '#374151',
-                  color: '#9ca3af',
+                  background: '#475569',
                   padding: '0.125rem 0.5rem',
                   borderRadius: '12px',
-                  fontSize: '0.7rem'
+                  fontSize: '0.75rem',
+                  color: '#cbd5e1',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.25rem'
                 }}>
-                  {property.frequencyPercent}%
+                  {getTypeIcon(node.type)} {node.type}
                 </span>
+                
+                <span style={{
+                  background: node.isRequired ? '#059669' : '#d97706',
+                  color: 'white',
+                  padding: '0.125rem 0.5rem',
+                  borderRadius: '12px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600
+                }}>
+                  {node.frequencyText}
+                </span>
+
+                {node.frequencyPercent && (
+                  <span style={{
+                    background: '#374151',
+                    color: '#9ca3af',
+                    padding: '0.125rem 0.5rem',
+                    borderRadius: '12px',
+                    fontSize: '0.7rem'
+                  }}>
+                    {node.frequencyPercent}%
+                  </span>
+                )}
+              </div>
+              
+              <div style={{
+                fontSize: '0.8rem',
+                color: '#94a3b8',
+                fontFamily: 'monospace',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {node.path}
+              </div>
+              
+              {/* Información adicional */}
+              {node.missing && node.missing.length > 0 && (
+                <div style={{
+                  fontSize: '0.75rem',
+                  color: '#f59e0b',
+                  marginTop: '0.25rem'
+                }}>
+                  ⚠️ Falta en: {node.missing.join(', ')}
+                </div>
+              )}
+
+              {node.type === 'mixed' && node.conflicts && node.conflicts.length > 0 && (
+                <div style={{
+                  fontSize: '0.75rem',
+                  color: '#ef4444',
+                  marginTop: '0.25rem'
+                }}>
+                  🔥 Conflicto de tipos detectado
+                </div>
+              )}
+
+              {node.examples && node.examples.length > 0 && (
+                <div style={{
+                  fontSize: '0.75rem',
+                  color: '#6b7280',
+                  marginTop: '0.25rem',
+                  fontStyle: 'italic'
+                }}>
+                  Ejemplo: {JSON.stringify(node.examples[0].value).substring(0, 50)}
+                  {JSON.stringify(node.examples[0].value).length > 50 ? '...' : ''}
+                </div>
               )}
             </div>
-            
-            <div style={{
-              fontSize: '0.8rem',
-              color: '#94a3b8',
-              fontFamily: 'monospace',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}>
-              {property.path}
-            </div>
-            
-            {/* Información adicional */}
-            {property.missing && property.missing.length > 0 && (
-              <div style={{
-                fontSize: '0.75rem',
-                color: '#f59e0b',
-                marginTop: '0.25rem'
-              }}>
-                ⚠️ Falta en: {property.missing.join(', ')}
-              </div>
-            )}
-
-            {property.type === 'mixed' && property.conflicts && property.conflicts.length > 0 && (
-              <div style={{
-                fontSize: '0.75rem',
-                color: '#ef4444',
-                marginTop: '0.25rem'
-              }}>
-                🔥 Conflicto de tipos detectado
-              </div>
-            )}
-
-            {property.examples && property.examples.length > 0 && (
-              <div style={{
-                fontSize: '0.75rem',
-                color: '#6b7280',
-                marginTop: '0.25rem',
-                fontStyle: 'italic'
-              }}>
-                Ejemplo: {JSON.stringify(property.examples[0].value).substring(0, 50)}
-                {JSON.stringify(property.examples[0].value).length > 50 ? '...' : ''}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -327,18 +404,18 @@ const PropertyTree = ({
     return icons[type] || '❓';
   };
 
-  const totalCount = propertiesArray.length;
+  const totalCount = treeNodes.length;
   const selectedCount = selectedProperties.size;
-  const requiredCount = propertiesArray.filter(p => p.isRequired).length;
+  const requiredCount = treeNodes.filter(p => p.isRequired).length;
   const optionalCount = totalCount - requiredCount;
 
   // Obtener niveles disponibles
   const availableLevels = [...new Set(Object.values(comparisonResult).map(p => p.level))].sort();
 
   return (
-    <div style={{ padding: '1rem', position: 'relative' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '1rem', position: 'relative' }}>
       {/* Header con filtros y controles */}
-      <div style={{ marginBottom: '1.5rem' }}>
+      <div style={{ marginBottom: '1.5rem', flexShrink: 0 }}>
         <div style={{ 
           display: 'flex', 
           justifyContent: 'space-between', 
@@ -357,7 +434,7 @@ const PropertyTree = ({
             gap: '1rem',
             flexWrap: 'wrap'
           }}>
-            <span>{totalCount} total</span>
+            <span>{totalCount} visibles</span>
             <span style={{ color: '#34d399' }}>{requiredCount} requeridas</span>
             <span style={{ color: '#fbbf24' }}>{optionalCount} opcionales</span>
             {selectedCount > 0 && (
@@ -366,7 +443,7 @@ const PropertyTree = ({
           </div>
         </div>
 
-        {/* NUEVOS: Controles de selección rápida */}
+        {/* Controles de selección rápida */}
         <div style={{ 
           marginBottom: '1rem',
           padding: '1rem',
@@ -449,22 +526,22 @@ const PropertyTree = ({
         </div>
       </div>
 
-      {/* Contenido del árbol */}
-      <div style={{ 
+      {/* Contenido del árbol - CON SCROLL */}
+      <div className="tree-content" style={{ 
         background: '#1e293b', 
         padding: '1rem', 
         borderRadius: '8px',
         border: '1px solid #475569',
-        maxHeight: '600px',
+        flex: 1,
         overflowY: 'auto'
       }}>
-        {propertiesArray.length === 0 ? (
+        {treeNodes.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
             {searchText ? 'No se encontraron propiedades con ese filtro' : 'No hay propiedades para mostrar'}
           </div>
         ) : (
           <div>
-            {propertiesArray.map((property, index) => renderProperty(property, index))}
+            {treeNodes.map((node, index) => renderTreeNode(node, index))}
             
             {totalCount > 0 && (
               <div style={{ 
@@ -477,7 +554,7 @@ const PropertyTree = ({
               }}>
                 {searchText ? 
                   `Mostrando ${totalCount} de ${Object.keys(comparisonResult).length} propiedades` :
-                  `Total: ${totalCount} propiedades analizadas`
+                  `Total: ${totalCount} nodos visibles en el árbol`
                 }
               </div>
             )}
@@ -485,7 +562,7 @@ const PropertyTree = ({
         )}
       </div>
 
-      {/* NUEVO: Tooltip para configurar arrays */}
+      {/* Tooltip para configurar arrays */}
       {arrayTooltip.visible && (
         <ArrayTooltip 
           x={arrayTooltip.x}

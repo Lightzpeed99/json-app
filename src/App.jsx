@@ -19,7 +19,12 @@ const App = () => {
     isProcessing,
     stats,
     hasComparison,
-    validationInfo
+    validationInfo,
+    expandedPaths,
+    toggleExpanded,
+    expandAll,
+    collapseAll,
+    expandToLevel
   } = useJSONComparison(loadedJSONs);
 
   // Hook de template builder
@@ -51,6 +56,7 @@ const App = () => {
     setLoadedJSONs(prev => prev.filter(json => json.id !== id));
   };
 
+  // NUEVA: Handler para selección de propiedades (ahora con selección inteligente)
   const handlePropertyToggle = (propertyPath) => {
     setSelectedProperties(prev => {
       const newSet = new Set(prev);
@@ -63,7 +69,12 @@ const App = () => {
     });
   };
 
-  // NUEVO: Handler para configuración de arrays
+  // NUEVA: Handler para expand/collapse
+  const handleToggleExpanded = (path) => {
+    toggleExpanded(path);
+  };
+
+  // Handler para configuración de arrays
   const handleArrayCountChange = (arrayPath, count) => {
     setArrayCount(arrayPath, count);
   };
@@ -87,6 +98,19 @@ const App = () => {
 
   const handleClearSelection = () => {
     setSelectedProperties(new Set());
+  };
+
+  // NUEVOS: Handlers para controles de expansión
+  const handleExpandAll = () => {
+    expandAll();
+  };
+
+  const handleCollapseAll = () => {
+    collapseAll();
+  };
+
+  const handleExpandToLevel = (level) => {
+    expandToLevel(level);
   };
 
   // Determinar clases del grid dinámicamente
@@ -221,7 +245,7 @@ const App = () => {
                     🏗️ {stats.totalProperties} propiedades encontradas
                   </span>
                 )}
-</div>
+              </div>
             )}
           </div>
 
@@ -296,11 +320,82 @@ const App = () => {
                   </div>
                 </div>
 
+                {/* NUEVA: Controles de expansión del árbol */}
+                <div style={{
+                  background: '#1e293b',
+                  padding: '1rem',
+                  borderRadius: '8px',
+                  border: '1px solid #475569',
+                  marginBottom: '1rem'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    gap: '0.75rem',
+                    alignItems: 'center',
+                    flexWrap: 'wrap'
+                  }}>
+                    <span style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>
+                      🌳 Controles de árbol:
+                    </span>
+                    
+                    <button 
+                      onClick={handleExpandAll}
+                      style={{
+                        background: '#059669',
+                        border: 'none',
+                        color: 'white',
+                        padding: '0.375rem 0.75rem',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      ⬇️ Expandir Todo
+                    </button>
+                    
+                    <button 
+                      onClick={handleCollapseAll}
+                      style={{
+                        background: '#dc2626',
+                        border: 'none',
+                        color: 'white',
+                        padding: '0.375rem 0.75rem',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      ⬆️ Colapsar Todo
+                    </button>
+                    
+                    {/* Botones por nivel */}
+                    {[0, 1, 2, 3].map(level => (
+                      <button 
+                        key={level}
+                        onClick={() => handleExpandToLevel(level)}
+                        style={{
+                          background: '#2563eb',
+                          border: 'none',
+                          color: 'white',
+                          padding: '0.375rem 0.75rem',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.8rem'
+                        }}
+                      >
+                        📚 Nivel {level}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* PropertyTree Component - NUEVAS PROPS AGREGADAS */}
                 <PropertyTree 
                   comparisonResult={comparisonResult}
                   selectedProperties={selectedProperties}
                   onPropertyToggle={handlePropertyToggle}
+                  expandedPaths={expandedPaths}
+                  onToggleExpanded={handleToggleExpanded}
                   arrayConfig={arrayConfig}
                   onArrayCountChange={handleArrayCountChange}
                 />
