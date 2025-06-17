@@ -3,7 +3,8 @@ import {
   buildTreeStructure, 
   applySmartSelection,
   isArrayParent,
-  hasChildren
+  hasChildren,
+  getDirectParent
 } from '../utils/smartSelection';
 
 const PropertyTree = ({ 
@@ -57,7 +58,7 @@ const PropertyTree = ({
     return arrays;
   }, [selectedProperties]);
 
-  // NUEVAS FUNCIONES DE SELECCIÓN RÁPIDA
+  // FUNCIONES DE SELECCIÓN RÁPIDA
   const handleSelectAll = () => {
     const allPaths = Object.keys(comparisonResult);
     allPaths.forEach(path => {
@@ -109,30 +110,49 @@ const PropertyTree = ({
     });
   };
 
-  // NUEVA: Manejo de selección inteligente
+  // CORREGIDA: Selección con cadena completa de padres y feedback visual mejorado
   const handleSmartPropertyToggle = (path) => {
-    const newSelection = applySmartSelection(path, selectedProperties, comparisonResult);
+    const isCurrentlySelected = selectedProperties.has(path);
     
-    // Aplicar cambios uno por uno para mantener consistencia
-    const currentPaths = Array.from(selectedProperties);
-    const newPaths = Array.from(newSelection);
-    
-    // Deseleccionar los que ya no están
-    currentPaths.forEach(currentPath => {
-      if (!newSelection.has(currentPath)) {
-        onPropertyToggle(currentPath);
-      }
-    });
-    
-    // Seleccionar los nuevos
-    newPaths.forEach(newPath => {
-      if (!selectedProperties.has(newPath)) {
-        onPropertyToggle(newPath);
-      }
-    });
+    if (isCurrentlySelected) {
+      // DESELECCIONAR: Usar lógica existente
+      onPropertyToggle(path);
+    } else {
+      // SELECCIONAR: Asegurar cadena completa de padres
+      const pathsToSelect = [];
+      
+      // Obtener todos los padres en orden desde la raíz
+      const getAllParents = (targetPath) => {
+        const parents = [];
+        let currentPath = targetPath;
+        
+        while (currentPath) {
+          const parent = getDirectParent(currentPath, comparisonResult);
+          if (parent && !selectedProperties.has(parent)) {
+            parents.unshift(parent); // Agregar al inicio para orden correcto
+          }
+          currentPath = parent;
+        }
+        
+        return parents;
+      };
+      
+      // Obtener la cadena completa: padres + propiedad objetivo
+      const requiredParents = getAllParents(path);
+      const fullChain = [...requiredParents, path];
+      
+      // CORREGIDO: Selección secuencial para asegurar actualización visual
+      fullChain.forEach((targetPath, index) => {
+        setTimeout(() => {
+          if (!selectedProperties.has(targetPath)) {
+            onPropertyToggle(targetPath);
+          }
+        }, index * 30); // 30ms de delay entre cada selección
+      });
+    }
   };
 
-  // NUEVA: Manejo de expand/collapse
+  // Manejo de expand/collapse
   const handleToggleExpand = (path) => {
     onToggleExpanded(path);
   };
@@ -161,18 +181,57 @@ const PropertyTree = ({
     return property.type === 'array' && detectableArrays.has(property.path);
   };
 
-  // NUEVA: Renderizar nodo individual jerárquico
+  // CORREGIDA: Verificar estado de selección visual
+  const isNodeSelected = (nodePath) => {
+    return selectedProperties.has(nodePath);
+  };
+
+  // Verificar si el checkbox debe estar indeterminado
+  const isNodeIndeterminate = (nodePath) => {
+    if (!hasChildren(nodePath, comparisonResult)) return false;
+    
+    // Obtener todos los descendientes
+    const allDescendants = Object.keys(comparisonResult).filter(path => 
+      path.startsWith(nodePath + '.') || path.startsWith(nodePath + '[0].')
+    );
+    
+    if (allDescendants.length === 0) return false;
+    
+    const selectedDescendants = allDescendants.filter(path => selectedProperties.has(path));
+    
+    // Indeterminado si algunos (pero no todos) los descendientes están seleccionados
+    return selectedDescendants.length > 0 && selectedDescendants.length < allDescendants.length;
+  };
+
+  // NUEVA: Obtener estado visual completo del nodo
+  const getNodeVisualState = (nodePath) => {
+    const isSelected = selectedProperties.has(nodePath);
+    const isIndeterminate = isNodeIndeterminate(nodePath);
+    
+    return {
+      isSelected,
+      isIndeterminate,
+      showBorder: isSelected,
+      showBadge: isSelected,
+      borderColor: isSelected ? '#2563eb' : '#475569',
+      boxShadow: isSelected ? '0 0 0 2px rgba(37, 99, 235, 0.2)' : 'none'
+    };
+  };
+
+  // CORREGIDA: Renderizar nodo individual con feedback visual mejorado
   const renderTreeNode = (node, index) => {
     const levelColor = getLevelColor(node.level || 0);
     const isArray = isConfigurableArray(node);
     const currentCount = arrayConfig[node.path]?.count || 2;
-    const isSelected = selectedProperties.has(node.path);
+    
+    // CORREGIDO: Usar la nueva función de estado visual
+    const visualState = getNodeVisualState(node.path);
     const canExpand = node.hasChildren;
     const isExpanded = node.isExpanded;
     
     return (
       <div 
-        key={node.path}
+        key={`${node.path}-${selectedProperties.size}-${Date.now()}`} // CORREGIDO: Key que fuerza re-render
         style={{
           marginBottom: '2px',
           marginLeft: `${(node.level || 0) * 20}px`
@@ -183,11 +242,12 @@ const PropertyTree = ({
           background: levelColor.bg,
           borderRadius: '6px',
           borderLeft: `4px solid ${node.isRequired ? '#059669' : '#d97706'}`,
-          border: isSelected ? '2px solid #2563eb' : '1px solid #475569',
-          transition: 'all 0.15s ease'
+          border: visualState.showBorder ? `2px solid ${visualState.borderColor}` : '1px solid #475569',
+          transition: 'all 0.15s ease',
+          boxShadow: visualState.boxShadow
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {/* NUEVO: Botón de expand/collapse */}
+            {/* Botón de expand/collapse */}
             {canExpand && (
               <button
                 onClick={() => handleToggleExpand(node.path)}
@@ -216,16 +276,24 @@ const PropertyTree = ({
               <div style={{ minWidth: '20px' }}></div>
             )}
             
-            {/* Checkbox con selección inteligente */}
+            {/* CORREGIDO: Checkbox con estado visual sincronizado */}
             <input
               type="checkbox"
-              checked={isSelected}
+              checked={visualState.isSelected}
+              ref={(el) => {
+                if (el) el.indeterminate = visualState.isIndeterminate;
+              }}
               onChange={() => handleSmartPropertyToggle(node.path)}
               style={{
                 cursor: 'pointer',
                 transform: 'scale(1.2)',
                 accentColor: '#2563eb'
               }}
+              title={
+                visualState.isSelected ? 'Deseleccionar propiedad' :
+                visualState.isIndeterminate ? 'Algunos hijos seleccionados' :
+                'Seleccionar propiedad'
+              }
             />
             
             {/* Property info */}
@@ -320,6 +388,23 @@ const PropertyTree = ({
                     {node.frequencyPercent}%
                   </span>
                 )}
+
+                {/* CORREGIDO: Indicador visual de selección mejorado */}
+                {visualState.showBadge && (
+                  <span style={{
+                    background: '#2563eb',
+                    color: 'white',
+                    padding: '0.125rem 0.375rem',
+                    borderRadius: '12px',
+                    fontSize: '0.7rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}>
+                    ✓ Seleccionado
+                  </span>
+                )}
               </div>
               
               <div style={{
@@ -363,6 +448,18 @@ const PropertyTree = ({
                 }}>
                   Ejemplo: {JSON.stringify(node.examples[0].value).substring(0, 50)}
                   {JSON.stringify(node.examples[0].value).length > 50 ? '...' : ''}
+                </div>
+              )}
+
+              {/* MEJORADO: Mostrar información de inclusión en template */}
+              {visualState.isSelected && (
+                <div style={{
+                  fontSize: '0.75rem',
+                  color: '#06b6d4',
+                  marginTop: '0.25rem',
+                  fontStyle: 'italic'
+                }}>
+                  📋 Incluido en template
                 </div>
               )}
             </div>
@@ -438,7 +535,9 @@ const PropertyTree = ({
             <span style={{ color: '#34d399' }}>{requiredCount} requeridas</span>
             <span style={{ color: '#fbbf24' }}>{optionalCount} opcionales</span>
             {selectedCount > 0 && (
-              <span style={{ color: '#60a5fa' }}>{selectedCount} seleccionadas</span>
+              <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>
+                {selectedCount} seleccionadas
+              </span>
             )}
           </div>
         </div>
@@ -543,6 +642,7 @@ const PropertyTree = ({
           <div>
             {treeNodes.map((node, index) => renderTreeNode(node, index))}
             
+            {/* Resumen de selección */}
             {totalCount > 0 && (
               <div style={{ 
                 textAlign: 'center', 
@@ -556,6 +656,11 @@ const PropertyTree = ({
                   `Mostrando ${totalCount} de ${Object.keys(comparisonResult).length} propiedades` :
                   `Total: ${totalCount} nodos visibles en el árbol`
                 }
+                {selectedCount > 0 && (
+                  <div style={{ marginTop: '0.5rem', color: '#60a5fa', fontWeight: 'bold' }}>
+                    ✓ {selectedCount} propiedades seleccionadas para template
+                  </div>
+                )}
               </div>
             )}
           </div>

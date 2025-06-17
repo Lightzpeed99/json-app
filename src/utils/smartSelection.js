@@ -1,7 +1,8 @@
 // src/utils/smartSelection.js
 
 /**
- * Utilidades SIMPLIFICADAS para manejo de selección y expansión jerárquica
+ * Utilidades CORREGIDAS para manejo de selección y expansión jerárquica
+ * Comportamiento tipo Postman: control granular e independiente
  */
 
 /**
@@ -35,20 +36,26 @@ export const getChildProperties = (parentPath, comparisonResult) => {
 export const getDirectParent = (propertyPath, comparisonResult) => {
   if (!comparisonResult || !propertyPath) return null;
 
-  const parts = propertyPath.split(".");
+  // Manejar arrays: requestedShipment.commodities[0].description
+  if (propertyPath.includes("[0]")) {
+    const parts = propertyPath.split(".");
+    if (parts.length <= 1) return null;
 
-  // Si es de nivel raíz, no tiene padre
+    // Buscar el path del padre
+    const parentPath = parts.slice(0, -1).join(".");
+    return comparisonResult[parentPath] ? parentPath : null;
+  }
+
+  // Objetos normales
+  const parts = propertyPath.split(".");
   if (parts.length <= 1) return null;
 
-  // Construir path del padre directo
   const parentPath = parts.slice(0, -1).join(".");
-
-  // Verificar que el padre existe en comparisonResult
   return comparisonResult[parentPath] ? parentPath : null;
 };
 
 /**
- * CORREGIDA: Obtiene solo los hijos directos manejando arrays correctamente
+ * CORREGIDA: Obtiene solo los hijos directos del siguiente nivel
  * @param {string} parentPath - Path del padre
  * @param {Object} comparisonResult - Resultado de comparación
  * @returns {Array} Array de paths hijos directos únicamente
@@ -59,38 +66,39 @@ export const getDirectChildren = (parentPath, comparisonResult) => {
   const parentProperty = comparisonResult[parentPath];
   if (!parentProperty) return [];
 
+  // NUEVO: Comportamiento uniforme para arrays y objetos
+  // Solo buscar hijos del SIGUIENTE nivel inmediato
+
+  const directChildren = [];
+
   // CASO 1: Si el padre es un ARRAY, buscar elementos [0]
   if (parentProperty.type === "array") {
-    return Object.keys(comparisonResult).filter((path) => {
-      // Buscar paths que empiecen con parentPath[0].
-      return (
-        path.startsWith(parentPath + "[0].") &&
-        !path.substring(parentPath.length + 4).includes(".")
-      ); // Solo hijos directos del [0]
+    Object.keys(comparisonResult).forEach((path) => {
+      // Buscar: parentPath[0].hijo (solo hijos directos)
+      if (path.startsWith(parentPath + "[0].")) {
+        const remainingPath = path.substring(parentPath.length + 4);
+        // Verificar que sea hijo directo (no nieto)
+        if (!remainingPath.includes(".") && !remainingPath.includes("[0]")) {
+          directChildren.push(path);
+        }
+      }
     });
   }
-
   // CASO 2: Si el padre es un OBJETO normal
-  if (parentProperty.type === "object") {
-    return Object.keys(comparisonResult).filter((path) => {
-      // Buscar paths que empiecen con parentPath.
+  else if (parentProperty.type === "object") {
+    Object.keys(comparisonResult).forEach((path) => {
+      // Buscar: parentPath.hijo (solo hijos directos)
       if (path.startsWith(parentPath + ".")) {
         const remainingPath = path.substring(parentPath.length + 1);
         // Verificar que sea hijo directo (no nieto)
-        return !remainingPath.includes(".") && !remainingPath.includes("[0]");
+        if (!remainingPath.includes(".") && !remainingPath.includes("[0]")) {
+          directChildren.push(path);
+        }
       }
-      return false;
     });
   }
 
-  // CASO 3: Para otros tipos, buscar hijos directos normales
-  return Object.keys(comparisonResult).filter((path) => {
-    if (path.startsWith(parentPath + ".")) {
-      const remainingPath = path.substring(parentPath.length + 1);
-      return !remainingPath.includes(".");
-    }
-    return false;
-  });
+  return directChildren;
 };
 
 /**
@@ -110,7 +118,7 @@ export const isArrayParent = (path, comparisonResult) => {
 };
 
 /**
- * CORREGIDA: Verifica si una propiedad tiene hijos (incluyendo arrays)
+ * CORREGIDA: Verifica si una propiedad tiene hijos
  * @param {string} path - Path de la propiedad
  * @param {Object} comparisonResult - Resultado de comparación
  * @returns {boolean} True si tiene hijos
@@ -125,7 +133,7 @@ export const hasChildren = (path, comparisonResult) => {
 };
 
 /**
- * SIMPLIFICADA: Calcula selección inteligente con lógica directa
+ * CORREGIDA: Selección simple sin cascada automática (modo Postman)
  * @param {string} selectedPath - Path seleccionado
  * @param {Set} currentSelection - Selección actual
  * @param {Object} comparisonResult - Resultado de comparación
@@ -146,39 +154,36 @@ export const calculateSmartSelection = (
   const isCurrentlySelected = currentSelection.has(selectedPath);
 
   if (isCurrentlySelected) {
-    // DESELECCIONAR: Remover la propiedad y todos sus hijos
+    // DESELECCIONAR: Solo la propiedad específica
     toDeselect.add(selectedPath);
 
-    const allChildren = getChildProperties(selectedPath, comparisonResult);
-    allChildren.forEach((child) => {
+    // OPCIONAL: Deseleccionar hijos si están seleccionados
+    // (comportamiento configurable para mantener flexibilidad)
+    const children = getChildProperties(selectedPath, comparisonResult);
+    children.forEach((child) => {
       if (currentSelection.has(child)) {
         toDeselect.add(child);
       }
     });
   } else {
-    // SELECCIONAR: Agregar la propiedad y su padre directo
+    // SELECCIONAR: Solo la propiedad específica + padre directo si es necesario
     toSelect.add(selectedPath);
 
-    // Solo agregar el padre directo, no todos los ancestros
+    // MÍNIMO: Solo agregar el padre directo para estructura válida
     const directParent = getDirectParent(selectedPath, comparisonResult);
     if (directParent && !currentSelection.has(directParent)) {
       toSelect.add(directParent);
     }
 
-    // Si es un array padre, seleccionar solo hijos directos
-    if (isArrayParent(selectedPath, comparisonResult)) {
-      const directChildren = getDirectChildren(selectedPath, comparisonResult);
-      directChildren.forEach((child) => {
-        toSelect.add(child);
-      });
-    }
+    // REMOVIDO: Ya no seleccionamos automáticamente hijos de arrays
+    // El usuario debe seleccionar manualmente cada propiedad que necesite
   }
 
   return { toSelect, toDeselect };
 };
 
 /**
- * Aplica la selección inteligente a un Set de propiedades seleccionadas
+ * Aplica la selección corregida
  * @param {string} toggledPath - Path que se está toggling
  * @param {Set} currentSelection - Selección actual
  * @param {Object} comparisonResult - Resultado de comparación
@@ -206,7 +211,7 @@ export const applySmartSelection = (
 };
 
 /**
- * ULTRA SIMPLE: Construye lista de nodos visibles respetando jerarquía
+ * CORREGIDA: Construye lista de nodos visibles con control granular
  * @param {Object} comparisonResult - Resultado de comparación
  * @param {Set} expandedPaths - Paths expandidos
  * @returns {Array} Array de nodos para renderizar EN ORDEN JERÁRQUICO
@@ -230,7 +235,7 @@ export const buildTreeStructure = (
         hasChildren: hasChildren(path, comparisonResult),
         isExpanded: expandedPaths.has(path),
         isArrayParent: isArrayParent(path, comparisonResult),
-        level: path.split(".").length - 1,
+        level: calculateNodeLevel(path),
       });
     }
   });
@@ -239,7 +244,7 @@ export const buildTreeStructure = (
 };
 
 /**
- * CORREGIDA: Determina si un nodo debe mostrarse considerando arrays
+ * CORREGIDA: Determina si un nodo debe mostrarse - Control granular estricto
  * @param {string} path - Path del nodo
  * @param {Set} expandedPaths - Paths expandidos
  * @param {Object} comparisonResult - Resultado de comparación
@@ -249,19 +254,39 @@ const shouldShowNode = (path, expandedPaths, comparisonResult) => {
   const parts = path.split(".");
 
   // NIVEL 0: Siempre visible (raíz)
-  if (parts.length === 1) return true;
+  if (parts.length === 1 && !path.includes("[0]")) {
+    return true;
+  }
 
-  // DETECTAR SI ES ELEMENTO DE ARRAY
+  // ELEMENTOS DE ARRAY: ej. "commodities[0].description"
   if (path.includes("[0]")) {
-    // Para elementos de array como "commodities[0].algo"
     const pathBeforeArray = path.split("[0]")[0]; // "commodities"
 
-    // El array padre debe estar expandido
+    // REGLA ESTRICTA: El array padre debe estar expandido explícitamente
     if (!expandedPaths.has(pathBeforeArray)) {
       return false;
     }
 
-    // También verificar que todos los ancestros del array estén expandidos
+    // Para elementos anidados dentro del array
+    const pathAfterArray = path.split("[0]")[1]; // ".description"
+    if (pathAfterArray && pathAfterArray !== ".") {
+      // Verificar que todos los padres intermedios estén expandidos
+      const fullArrayPath = pathBeforeArray + "[0]";
+      const remainingParts = pathAfterArray.substring(1).split(".");
+
+      for (let i = 1; i < remainingParts.length; i++) {
+        const intermediatePath =
+          fullArrayPath + "." + remainingParts.slice(0, i).join(".");
+        if (
+          comparisonResult[intermediatePath] &&
+          !expandedPaths.has(intermediatePath)
+        ) {
+          return false;
+        }
+      }
+    }
+
+    // También verificar ancestros del array
     const ancestorParts = pathBeforeArray.split(".");
     for (let i = 1; i < ancestorParts.length; i++) {
       const ancestorPath = ancestorParts.slice(0, i).join(".");
@@ -273,13 +298,19 @@ const shouldShowNode = (path, expandedPaths, comparisonResult) => {
     return true;
   }
 
-  // PARA NODOS NORMALES: Solo visible si el padre DIRECTO está expandido
+  // OBJETOS NORMALES: Solo visible si el padre DIRECTO está expandido
   const parentPath = parts.slice(0, -1).join(".");
-  return expandedPaths.has(parentPath);
+
+  // Verificar que el padre existe y está expandido
+  if (comparisonResult[parentPath]) {
+    return expandedPaths.has(parentPath);
+  }
+
+  return false;
 };
 
 /**
- * SIMPLE: Toggle de expansión - solo afecta al nodo específico
+ * CORREGIDA: Toggle de expansión granular - solo afecta al nodo específico
  * @param {string} path - Path del nodo a togglear
  * @param {Set} expandedPaths - Paths actualmente expandidos
  * @returns {Set} Nuevo conjunto de paths expandidos
@@ -288,10 +319,10 @@ export const toggleNodeExpansion = (path, expandedPaths) => {
   const newExpandedPaths = new Set(expandedPaths);
 
   if (expandedPaths.has(path)) {
-    // COLAPSAR: Solo remover este nodo
+    // COLAPSAR: Remover este nodo y todos sus descendientes
     newExpandedPaths.delete(path);
 
-    // TAMBIÉN remover todos los descendientes para evitar inconsistencias
+    // Remover todos los descendientes para evitar inconsistencias
     Array.from(expandedPaths).forEach((expandedPath) => {
       if (
         expandedPath.startsWith(path + ".") ||
@@ -301,17 +332,20 @@ export const toggleNodeExpansion = (path, expandedPaths) => {
       }
     });
   } else {
-    // EXPANDIR: Solo agregar este nodo
+    // EXPANDIR: Solo agregar este nodo específico
     newExpandedPaths.add(path);
+
+    // NO expandir automáticamente descendientes
+    // El usuario debe expandir manualmente cada nivel que necesite
   }
 
   return newExpandedPaths;
 };
 
 /**
- * NUEVA: Función específica para inicialización - solo nivel raíz visible
+ * NUEVA: Función específica para inicialización limpia
  * @param {Object} comparisonResult - Resultado de comparación
- * @returns {Set} Set vacío para que solo se vea nivel raíz
+ * @returns {Set} Set vacío para inicio limpio
  */
 export const initializeExpandedPaths = (comparisonResult) => {
   // INICIO LIMPIO: Sin nada expandido = solo nivel raíz visible
@@ -319,13 +353,42 @@ export const initializeExpandedPaths = (comparisonResult) => {
 };
 
 /**
- * Obtiene el nivel de un path
+ * NUEVA: Calcula el nivel visual de un nodo considerando arrays
+ * @param {string} path - Path de la propiedad
+ * @returns {number} Nivel visual del nodo
+ */
+const calculateNodeLevel = (path) => {
+  if (!path) return 0;
+
+  // Contar niveles considerando arrays como parte de la jerarquía
+  let level = 0;
+  const parts = path.split(".");
+
+  parts.forEach((part) => {
+    if (part.includes("[0]")) {
+      level += 1; // El array cuenta como un nivel
+      if (part !== part.replace("[0]", "")) {
+        // Si hay contenido después del [0], cuenta como otro nivel
+        const afterArray = part.split("[0]")[1];
+        if (afterArray && afterArray !== "") {
+          level += 1;
+        }
+      }
+    } else {
+      level += 1;
+    }
+  });
+
+  return Math.max(0, level - 1); // Ajustar porque empezamos en 0
+};
+
+/**
+ * Obtiene el nivel de un path (versión simple)
  * @param {string} path - Path de la propiedad
  * @returns {number} Nivel del path (0 = raíz)
  */
 export const getPathLevel = (path) => {
-  if (!path) return 0;
-  return path.split(".").length - 1;
+  return calculateNodeLevel(path);
 };
 
 /**
@@ -351,4 +414,32 @@ export const isDirectChild = (childPath, parentPath) => {
     : childPath.substring(parentPath.length + 1);
 
   return !remainingPath.includes(".");
+};
+
+/**
+ * NUEVA: Valida que un path es seleccionable (tiene padre válido)
+ * @param {string} path - Path a validar
+ * @param {Set} selectedProperties - Propiedades actualmente seleccionadas
+ * @param {Object} comparisonResult - Resultado de comparación
+ * @returns {boolean} True si el path es válido para seleccionar
+ */
+export const isValidSelection = (
+  path,
+  selectedProperties,
+  comparisonResult
+) => {
+  if (!path || !comparisonResult) return false;
+
+  // Nivel raíz siempre es válido
+  if (!path.includes(".") && !path.includes("[0]")) return true;
+
+  // Verificar que el padre directo esté seleccionado o sea válido
+  const parent = getDirectParent(path, comparisonResult);
+  if (!parent) return true; // Sin padre = válido
+
+  // El padre debe estar seleccionado para que el hijo sea válido
+  return (
+    selectedProperties.has(parent) ||
+    isValidSelection(parent, selectedProperties, comparisonResult)
+  );
 };
