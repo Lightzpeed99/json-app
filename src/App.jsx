@@ -5,6 +5,10 @@ import './components/FileUploader.css';
 import PropertyTree from './components/PropertyTree';
 import { useJSONComparison } from './hooks/useJSONComparison';
 import { useTemplateBuilder } from './hooks/useTemplateBuilder';
+import { 
+  applySmartSelection, 
+  toggleNodeExpansion 
+} from './utils/smartSelection';
 
 const App = () => {
   // Estado global de la aplicación
@@ -21,7 +25,7 @@ const App = () => {
     hasComparison,
     validationInfo,
     expandedPaths,
-    toggleExpanded,
+    setExpandedPaths, // NUEVA: función directa para actualizar expandedPaths
     expandAll,
     collapseAll,
     expandToLevel
@@ -56,22 +60,16 @@ const App = () => {
     setLoadedJSONs(prev => prev.filter(json => json.id !== id));
   };
 
-  // NUEVA: Handler para selección de propiedades (ahora con selección inteligente)
+  // ACTUALIZADA: Handler para selección de propiedades con nueva lógica
   const handlePropertyToggle = (propertyPath) => {
-    setSelectedProperties(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(propertyPath)) {
-        newSet.delete(propertyPath);
-      } else {
-        newSet.add(propertyPath);
-      }
-      return newSet;
-    });
+    const newSelection = applySmartSelection(propertyPath, selectedProperties, comparisonResult);
+    setSelectedProperties(newSelection);
   };
 
-  // NUEVA: Handler para expand/collapse
+  // NUEVA: Handler para expansión con lógica simplificada
   const handleToggleExpanded = (path) => {
-    toggleExpanded(path);
+    const newExpandedPaths = toggleNodeExpansion(path, expandedPaths);
+    setExpandedPaths(newExpandedPaths);
   };
 
   // Handler para configuración de arrays
@@ -100,7 +98,7 @@ const App = () => {
     setSelectedProperties(new Set());
   };
 
-  // NUEVOS: Handlers para controles de expansión
+  // ACTUALIZADOS: Handlers para controles de expansión
   const handleExpandAll = () => {
     expandAll();
   };
@@ -320,7 +318,7 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* NUEVA: Controles de expansión del árbol */}
+                {/* Controles de expansión del árbol */}
                 <div style={{
                   background: '#1e293b',
                   padding: '1rem',
@@ -389,7 +387,7 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* PropertyTree Component - NUEVAS PROPS AGREGADAS */}
+                {/* PropertyTree Component - PROPS ACTUALIZADAS */}
                 <PropertyTree 
                   comparisonResult={comparisonResult}
                   selectedProperties={selectedProperties}

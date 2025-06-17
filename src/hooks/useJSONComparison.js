@@ -6,9 +6,13 @@ import {
   generateComparisonStats,
   filterProperties,
 } from "../utils/jsonComparator";
+import {
+  initializeExpandedPaths,
+  toggleNodeExpansion,
+} from "../utils/smartSelection";
 
 /**
- * Custom hook para manejar la comparación de JSONs
+ * Custom hook para manejar la comparación de JSONs con nueva lógica de expansión
  * @param {Array} loadedJSONs - Array de JSONs cargados
  * @returns {Object} Estado y funciones de comparación
  */
@@ -23,6 +27,7 @@ export const useJSONComparison = (loadedJSONs) => {
     const processComparison = async () => {
       if (!loadedJSONs || loadedJSONs.length === 0) {
         setComparisonResult(null);
+        setExpandedPaths(new Set()); // LIMPIO: Sin elementos expandidos
         return;
       }
 
@@ -35,19 +40,15 @@ export const useJSONComparison = (loadedJSONs) => {
         const result = mergeJSONStructures(loadedJSONs);
         setComparisonResult(result);
 
-        // Auto-expandir primeros niveles
+        // NUEVA LÓGICA: Inicialización limpia - solo nivel raíz visible
         if (result) {
-          const autoExpanded = new Set();
-          Object.entries(result).forEach(([path, property]) => {
-            if (property.level < 2) {
-              autoExpanded.add(path);
-            }
-          });
-          setExpandedPaths(autoExpanded);
+          const cleanExpandedPaths = initializeExpandedPaths(result);
+          setExpandedPaths(cleanExpandedPaths);
         }
       } catch (error) {
         console.error("Error processing comparison:", error);
         setComparisonResult(null);
+        setExpandedPaths(new Set());
       } finally {
         setIsProcessing(false);
       }
@@ -72,26 +73,13 @@ export const useJSONComparison = (loadedJSONs) => {
     return generateComparisonStats(filteredResult);
   }, [filteredResult]);
 
-  // Funciones para manejar expansión/contracción
+  // ACTUALIZADA: Función para toggle usando nueva lógica
   const toggleExpanded = (path) => {
-    setExpandedPaths((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(path)) {
-        newSet.delete(path);
-        // También contraer todos los hijos
-        Array.from(newSet).forEach((p) => {
-          if (p.startsWith(path + ".")) {
-            newSet.delete(p);
-          }
-        });
-      } else {
-        newSet.add(path);
-      }
-      return newSet;
-    });
+    const newExpandedPaths = toggleNodeExpansion(path, expandedPaths);
+    setExpandedPaths(newExpandedPaths);
   };
 
-  // Expandir/contraer todos
+  // SIMPLIFICADAS: Funciones de expansión masiva
   const expandAll = () => {
     if (!comparisonResult) return;
     const allPaths = new Set(Object.keys(comparisonResult));
@@ -99,22 +87,25 @@ export const useJSONComparison = (loadedJSONs) => {
   };
 
   const collapseAll = () => {
-    setExpandedPaths(new Set());
+    const cleanExpandedPaths = initializeExpandedPaths(comparisonResult);
+    setExpandedPaths(cleanExpandedPaths);
   };
 
-  // Expandir solo hasta cierto nivel
+  // SIMPLIFICADA: Expandir solo hasta cierto nivel
   const expandToLevel = (maxLevel) => {
     if (!comparisonResult) return;
     const levelPaths = new Set();
+
     Object.entries(comparisonResult).forEach(([path, property]) => {
       if (property.level <= maxLevel) {
         levelPaths.add(path);
       }
     });
+
     setExpandedPaths(levelPaths);
   };
 
-  // Funciones de filtrado
+  // Funciones de filtrado (sin cambios)
   const updateFilters = (newFilters) => {
     setFilters((prev) => ({ ...prev, ...newFilters }));
   };
@@ -213,12 +204,15 @@ export const useJSONComparison = (loadedJSONs) => {
     filters,
     expandedPaths,
 
+    // NUEVA: Función directa para actualizar expandedPaths
+    setExpandedPaths,
+
     // Estadísticas
     stats,
     filteredStats,
     validationInfo: getValidationInfo(),
 
-    // Funciones de expansión
+    // Funciones de expansión (actualizadas)
     toggleExpanded,
     expandAll,
     collapseAll,
