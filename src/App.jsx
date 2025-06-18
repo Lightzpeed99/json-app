@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import './App.css';
 import FileUploader from './components/FileUploader';
-import './components/FileUploader.css';
 import PropertyTree from './components/PropertyTree';
 import { useJSONComparison } from './hooks/useJSONComparison';
 import { useTemplateBuilder } from './hooks/useTemplateBuilder';
@@ -14,8 +13,12 @@ const App = () => {
   // Estado global de la aplicación
   const [loadedJSONs, setLoadedJSONs] = useState([]);
   const [selectedProperties, setSelectedProperties] = useState(new Set());
-  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
-  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [showFileModal, setShowFileModal] = useState(false);
+  const [showJSONSettings, setShowJSONSettings] = useState(false);
+  const [showFilesList, setShowFilesList] = useState(false);
+  const [isTemplateCollapsed, setIsTemplateCollapsed] = useState(false);
+  const [templatePanelWidth, setTemplatePanelWidth] = useState(350);
+  const [searchText, setSearchText] = useState('');
 
   // Hook de comparación JSON
   const {
@@ -25,10 +28,9 @@ const App = () => {
     hasComparison,
     validationInfo,
     expandedPaths,
-    setExpandedPaths, // NUEVA: función directa para actualizar expandedPaths
+    setExpandedPaths,
     expandAll,
-    collapseAll,
-    expandToLevel
+    collapseAll
   } = useJSONComparison(loadedJSONs);
 
   // Hook de template builder
@@ -44,8 +46,6 @@ const App = () => {
     getArrayCount,
     exportAsFile,
     copyToClipboard,
-    validateTemplate,
-    getPreviewWithExamples,
     hasTemplate,
     hasArrays,
     isValid
@@ -54,19 +54,20 @@ const App = () => {
   // Handlers para gestión de JSONs
   const handleFilesLoaded = (files) => {
     setLoadedJSONs(prev => [...prev, ...files]);
+    setShowFileModal(false);
   };
 
   const handleRemoveJSON = (id) => {
     setLoadedJSONs(prev => prev.filter(json => json.id !== id));
   };
 
-  // ACTUALIZADA: Handler para selección de propiedades con nueva lógica
+  // Handler para selección de propiedades
   const handlePropertyToggle = (propertyPath) => {
     const newSelection = applySmartSelection(propertyPath, selectedProperties, comparisonResult);
     setSelectedProperties(newSelection);
   };
 
-  // NUEVA: Handler para expansión con lógica simplificada
+  // Handler para expansión
   const handleToggleExpanded = (path) => {
     const newExpandedPaths = toggleNodeExpansion(path, expandedPaths);
     setExpandedPaths(newExpandedPaths);
@@ -86,19 +87,24 @@ const App = () => {
   const handleCopyToClipboard = async () => {
     const success = await copyToClipboard();
     if (success) {
-      // TODO: Mostrar toast de éxito
       console.log('Template copiado al portapapeles');
     } else {
-      // TODO: Mostrar toast de error
       console.log('Error al copiar template');
     }
   };
 
-  const handleClearSelection = () => {
+  // Handlers para controles simplificados
+  const handleSelectAll = () => {
+    if (!comparisonResult) return;
+    const allPaths = Object.keys(comparisonResult);
+    const newSelection = new Set(allPaths);
+    setSelectedProperties(newSelection);
+  };
+
+  const handleDeselectAll = () => {
     setSelectedProperties(new Set());
   };
 
-  // ACTUALIZADOS: Handlers para controles de expansión
   const handleExpandAll = () => {
     expandAll();
   };
@@ -107,415 +113,223 @@ const App = () => {
     collapseAll();
   };
 
-  const handleExpandToLevel = (level) => {
-    expandToLevel(level);
-  };
+  // Handler para redimensionar panel
+  const handleMouseDown = (e) => {
+    const startX = e.clientX;
+    const startWidth = templatePanelWidth;
+    const maxWidth = window.innerWidth / 2;
 
-  // Determinar clases del grid dinámicamente
-  const getGridClasses = () => {
-    let classes = 'app-main';
-    if (leftPanelCollapsed && rightPanelCollapsed) {
-      classes += ' both-collapsed';
-    } else if (leftPanelCollapsed) {
-      classes += ' left-collapsed';
-    } else if (rightPanelCollapsed) {
-      classes += ' right-collapsed';
-    }
-    return classes;
-  };
+    const handleMouseMove = (e) => {
+      const newWidth = Math.max(300, Math.min(maxWidth, startWidth - (e.clientX - startX)));
+      setTemplatePanelWidth(newWidth);
+    };
 
-  // Obtener preview del template
-  const templatePreview = getPreviewWithExamples();
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>JSON Documentador</h1>
-        <p>Compara y documenta estructuras JSON automáticamente</p>
-      </header>
-
-      <main className={getGridClasses()}>
-        {/* Panel Izquierdo - Gestión de JSONs */}
-        <aside className={`left-panel ${leftPanelCollapsed ? 'collapsed' : ''}`}>
-          <div className="panel-header">
-            <h2>{leftPanelCollapsed ? 'JSON' : 'JSONs Cargados'}</h2>
-            <button 
-              className="collapse-btn"
-              onClick={() => setLeftPanelCollapsed(!leftPanelCollapsed)}
-              title={leftPanelCollapsed ? 'Expandir panel' : 'Contraer panel'}
-            >
-              {leftPanelCollapsed ? '→' : '←'}
-            </button>
+      {/* HEADER COMPACTO - MÁXIMO 2 LÍNEAS */}
+      <header className="app-header-compact">
+        {/* LÍNEA 1: Título + Botones + Estadísticas */}
+        <div className="header-line-1">
+          <div className="header-title-compact">
+            <h1>JSON Documentador</h1>
+            <p>Compara estructuras JSON y genera templates</p>
           </div>
           
-          {!leftPanelCollapsed && (
-            <div className="panel-content">
-              <FileUploader onFilesLoaded={handleFilesLoaded} />
-
-              {/* Información de validación */}
-              {loadedJSONs.length > 0 && (
-                <div className="validation-summary">
-                  <h4>📊 Resumen de Archivos</h4>
-                  <div className="validation-stats">
-                    <div className="stat-item">
-                      <span className="stat-label">Total:</span>
-                      <span className="stat-value">{validationInfo.total}</span>
-                    </div>
-                    <div className="stat-item success">
-                      <span className="stat-label">Válidos:</span>
-                      <span className="stat-value">{validationInfo.valid}</span>
-                    </div>
-                    {validationInfo.invalid > 0 && (
-                      <div className="stat-item error">
-                        <span className="stat-label">Con errores:</span>
-                        <span className="stat-value">{validationInfo.invalid}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Lista de JSONs */}
-              <div className="json-list">
-                <h3>Archivos ({loadedJSONs.length})</h3>
-                {loadedJSONs.map(json => (
-                  <div key={json.id} className={`json-item ${json.valid ? 'valid' : 'invalid'}`}>
-                    <div className="json-info">
-                      <span className="json-name" title={json.name}>
-                        {json.name}
-                      </span>
-                      <div className="json-meta">
-                        {json.valid ? (
-                          <span className="valid-indicator">✅ Válido</span>
-                        ) : (
-                          <span className="error-indicator" title={json.error}>
-                            ⚠️ Error: {json.error?.substring(0, 50)}...
-                          </span>
-                        )}
-                        <span className="file-size">
-                          {formatFileSize(json.size)}
-                        </span>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => handleRemoveJSON(json.id)}
-                      className="remove-btn"
-                      title="Remover archivo"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-                {loadedJSONs.length === 0 && (
-                  <p className="empty-state">No hay archivos cargados</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Contenido colapsado */}
-          {leftPanelCollapsed && (
-            <div className="collapsed-content">
-              <div className="collapsed-indicator">
-                📁
-                <span className="file-count">{loadedJSONs.length}</span>
-              </div>
-            </div>
-          )}
-        </aside>
-
-        {/* Panel Central - Vista Comparativa */}
-        <section className="center-panel">
-          <div className="panel-header">
-            <h2>Comparación de Estructuras</h2>
+          {/* Botones principales - SOLO SI HAY ARCHIVOS */}
+          <div className="header-actions">
             {loadedJSONs.length > 0 && (
-              <div className="comparison-stats">
-                <span className="stat">
-                  📊 {validationInfo.valid} archivos comparados
-                </span>
-                {selectedProperties.size > 0 && (
-                  <span className="stat">
-                    ✅ {selectedProperties.size} propiedades seleccionadas
-                  </span>
-                )}
-                {stats && (
-                  <span className="stat">
-                    🏗️ {stats.totalProperties} propiedades encontradas
-                  </span>
-                )}
-              </div>
+              <>
+                <button 
+                  className="action-btn"
+                  onClick={() => setShowFileModal(true)}
+                  title="Cargar más archivos JSON"
+                >
+                  📁 Cargar JSONs
+                </button>
+                
+                <button 
+                  className="action-btn secondary"
+                  onClick={() => setShowJSONSettings(true)}
+                  title="Configuración de JSONs"
+                >
+                  ⚙️ JSON Settings
+                </button>
+              </>
             )}
           </div>
 
-          <div className="panel-content">
-            {loadedJSONs.length === 0 ? (
-              <div className="empty-comparison">
-                <h3>👋 ¡Bienvenido al JSON Documentador!</h3>
-                <p>Para comenzar:</p>
-                <ol>
-                  <li>Carga múltiples archivos JSON del mismo endpoint</li>
-                  <li>Visualiza la comparación automática de estructuras</li>
-                  <li>Selecciona propiedades para crear templates</li>
-                  <li>Exporta la documentación generada</li>
-                </ol>
+          {/* Estadísticas y controles en línea */}
+          {loadedJSONs.length > 0 && (
+            <div className="header-stats-inline">
+              {/* Badge de archivos clickeable */}
+              <div 
+                className="files-badge"
+                onClick={() => setShowFilesList(!showFilesList)}
+                title="Ver archivos cargados"
+              >
+                📊 {validationInfo.total} archivos
+                {validationInfo.valid > 0 && (
+                  <span className="badge-success">✅ {validationInfo.valid}</span>
+                )}
+                {validationInfo.invalid > 0 && (
+                  <span className="badge-error">❌ {validationInfo.invalid}</span>
+                )}
               </div>
-            ) : isProcessing ? (
-              <div className="processing">
-                <div className="processing-indicator">
-                  <div className="spinner"></div>
-                  <p>🔄 Analizando estructuras JSON...</p>
-                  <span className="processing-details">
-                    Comparando {validationInfo.valid} archivos válidos
-                  </span>
-                </div>
-              </div>
-            ) : hasComparison ? (
-              <div className="comparison-results">
-                {/* Estadísticas de comparación */}
-                <div className="comparison-overview">
-                  <div className="overview-grid">
-                    <div className="overview-card">
-                      <div className="card-icon">📄</div>
-                      <div className="card-content">
-                        <div className="card-value">{stats?.totalProperties || 0}</div>
-                        <div className="card-label">Total Propiedades</div>
-                      </div>
-                    </div>
-                    
-                    <div className="overview-card required">
-                      <div className="card-icon">✅</div>
-                      <div className="card-content">
-                        <div className="card-value">{stats?.requiredProperties || 0}</div>
-                        <div className="card-label">Requeridas</div>
-                      </div>
-                    </div>
-                    
-                    <div className="overview-card optional">
-                      <div className="card-icon">❓</div>
-                      <div className="card-content">
-                        <div className="card-value">{stats?.optionalProperties || 0}</div>
-                        <div className="card-label">Opcionales</div>
-                      </div>
-                    </div>
-                    
-                    {stats?.conflictProperties > 0 && (
-                      <div className="overview-card conflict">
-                        <div className="card-icon">⚠️</div>
-                        <div className="card-content">
-                          <div className="card-value">{stats.conflictProperties}</div>
-                          <div className="card-label">Conflictos</div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="overview-card depth">
-                      <div className="card-icon">🌳</div>
-                      <div className="card-content">
-                        <div className="card-value">{stats?.maxDepth || 0}</div>
-                        <div className="card-label">Niveles Max</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Controles de expansión del árbol */}
-                <div style={{
-                  background: '#1e293b',
-                  padding: '1rem',
-                  borderRadius: '8px',
-                  border: '1px solid #475569',
-                  marginBottom: '1rem'
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    gap: '0.75rem',
-                    alignItems: 'center',
-                    flexWrap: 'wrap'
-                  }}>
-                    <span style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>
-                      🌳 Controles de árbol:
-                    </span>
-                    
-                    <button 
-                      onClick={handleExpandAll}
-                      style={{
-                        background: '#059669',
-                        border: 'none',
-                        color: 'white',
-                        padding: '0.375rem 0.75rem',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontSize: '0.8rem'
-                      }}
-                    >
+              {/* Estadísticas de comparación */}
+              {hasComparison && stats && (
+                <>
+                  <div className="stat-inline">
+                    <span className="stat-value">{stats.totalProperties || 0}</span>
+                    <span className="stat-label">Total</span>
+                  </div>
+                  
+                  <div className="stat-inline success">
+                    <span className="stat-value">{stats.requiredProperties || 0}</span>
+                    <span className="stat-label">Requeridas</span>
+                  </div>
+                  
+                  <div className="stat-inline warning">
+                    <span className="stat-value">{stats.optionalProperties || 0}</span>
+                    <span className="stat-label">Opcionales</span>
+                  </div>
+
+                  {selectedProperties.size > 0 && (
+                    <div className="stat-inline selected">
+                      <span className="stat-value">{selectedProperties.size}</span>
+                      <span className="stat-label">Seleccionadas</span>
+                    </div>
+                  )}
+
+                  {/* Controles en línea */}
+                  <div className="controls-inline">
+                    <button onClick={handleExpandAll} className="control-btn-inline expand">
                       ⬇️ Expandir Todo
                     </button>
-                    
-                    <button 
-                      onClick={handleCollapseAll}
-                      style={{
-                        background: '#dc2626',
-                        border: 'none',
-                        color: 'white',
-                        padding: '0.375rem 0.75rem',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontSize: '0.8rem'
-                      }}
-                    >
+                    <button onClick={handleCollapseAll} className="control-btn-inline collapse">
                       ⬆️ Colapsar Todo
                     </button>
-                    
-                    {/* Botones por nivel */}
-                    {[0, 1, 2, 3].map(level => (
-                      <button 
-                        key={level}
-                        onClick={() => handleExpandToLevel(level)}
-                        style={{
-                          background: '#2563eb',
-                          border: 'none',
-                          color: 'white',
-                          padding: '0.375rem 0.75rem',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontSize: '0.8rem'
-                        }}
-                      >
-                        📚 Nivel {level}
-                      </button>
-                    ))}
+                    <button onClick={handleSelectAll} className="control-btn-inline select">
+                      ✅ Seleccionar Todo
+                    </button>
+                    <button onClick={handleDeselectAll} className="control-btn-inline deselect">
+                      ❌ Deseleccionar Todo
+                    </button>
                   </div>
-                </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
 
-                {/* PropertyTree Component - PROPS ACTUALIZADAS */}
-                <PropertyTree 
-                  comparisonResult={comparisonResult}
-                  selectedProperties={selectedProperties}
-                  onPropertyToggle={handlePropertyToggle}
-                  expandedPaths={expandedPaths}
-                  onToggleExpanded={handleToggleExpanded}
-                  arrayConfig={arrayConfig}
-                  onArrayCountChange={handleArrayCountChange}
-                />
-              </div>
-            ) : (
-              <div className="no-comparison">
-                <h3>⚠️ No se pudo generar comparación</h3>
-                <p>Verifica que los archivos JSON sean válidos</p>
-                {validationInfo.invalid > 0 && (
-                  <p className="error-hint">
-                    Hay {validationInfo.invalid} archivo(s) con errores que no se pudieron procesar
-                  </p>
-                )}
-              </div>
-            )}
+        {/* LÍNEA 2: Búsqueda - SOLO SI HAY COMPARACIÓN */}
+        {hasComparison && (
+          <div className="header-line-2">
+            <div className="search-container">
+              <input
+                type="text"
+                placeholder="🔍 Buscar propiedades..."
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                className="search-input-header"
+              />
+              {searchText && (
+                <button
+                  onClick={() => setSearchText('')}
+                  className="search-clear"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
+        )}
+      </header>
+
+      {/* LAYOUT PRINCIPAL - Redimensionable */}
+      <main className="app-main-resizable" style={{
+        gridTemplateColumns: isTemplateCollapsed ? '1fr 60px' : `1fr ${templatePanelWidth}px`
+      }}>
+        {/* Panel Central - Comparación */}
+        <section className="center-panel">
+          {loadedJSONs.length === 0 ? (
+            <div className="empty-comparison">
+              <h3>👋 ¡Comienza cargando archivos JSON!</h3>
+              <p>Haz clic en el botón para comparar estructuras</p>
+              <button 
+                className="start-btn"
+                onClick={() => setShowFileModal(true)}
+              >
+                📁 Cargar Archivos JSON
+              </button>
+            </div>
+          ) : isProcessing ? (
+            <div className="processing">
+              <div className="processing-indicator">
+                <div className="spinner"></div>
+                <p>🔄 Analizando estructuras JSON...</p>
+                <span className="processing-details">
+                  Comparando {validationInfo.valid} archivos válidos
+                </span>
+              </div>
+            </div>
+          ) : hasComparison ? (
+            <PropertyTree 
+              comparisonResult={comparisonResult}
+              selectedProperties={selectedProperties}
+              onPropertyToggle={handlePropertyToggle}
+              expandedPaths={expandedPaths}
+              onToggleExpanded={handleToggleExpanded}
+              arrayConfig={arrayConfig}
+              onArrayCountChange={handleArrayCountChange}
+              searchText={searchText}
+            />
+          ) : (
+            <div className="no-comparison">
+              <h3>⚠️ No se pudo generar comparación</h3>
+              <p>Verifica que los archivos JSON sean válidos</p>
+              {validationInfo.invalid > 0 && (
+                <p className="error-hint">
+                  Hay {validationInfo.invalid} archivo(s) con errores
+                </p>
+              )}
+            </div>
+          )}
         </section>
 
-        {/* Panel Derecho - Template Builder */}
-        <aside className={`right-panel ${rightPanelCollapsed ? 'collapsed' : ''}`}>
+        {/* Panel Template - Colapsable y Redimensionable */}
+        <aside className={`template-panel-resizable ${isTemplateCollapsed ? 'collapsed' : ''}`}>
+          {/* Handle de resize */}
+          {!isTemplateCollapsed && (
+            <div className="resize-handle" onMouseDown={handleMouseDown}></div>
+          )}
+          
           <div className="panel-header">
-            <h2>{rightPanelCollapsed ? 'Temp' : 'Template Builder'}</h2>
+            <h2>{isTemplateCollapsed ? 'T' : 'Template Builder'}</h2>
             <button 
               className="collapse-btn"
-              onClick={() => setRightPanelCollapsed(!rightPanelCollapsed)}
-              title={rightPanelCollapsed ? 'Expandir panel' : 'Contraer panel'}
+              onClick={() => setIsTemplateCollapsed(!isTemplateCollapsed)}
+              title={isTemplateCollapsed ? 'Expandir panel' : 'Contraer panel'}
             >
-              {rightPanelCollapsed ? '←' : '→'}
+              {isTemplateCollapsed ? '←' : '→'}
             </button>
           </div>
 
-          {!rightPanelCollapsed && (
+          {!isTemplateCollapsed && (
             <div className="panel-content">
               {selectedProperties.size > 0 ? (
                 <div className="template-builder">
-                  {/* Header con estadísticas */}
-                  <div className="template-header">
-                    <h3>🎯 Template Generator</h3>
-                    <div className="template-meta">
-                      <span className="meta-item">
-                        📋 {selectedProperties.size} propiedades
-                      </span>
-                      {hasTemplate && (
-                        <span className="meta-item">
-                          🏗️ {templateStats?.totalProperties || 0} generadas
-                        </span>
-                      )}
-                      {hasArrays && (
-                        <span className="meta-item">
-                          📊 {getAvailableArrays().length} arrays
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Configuración del template */}
-                  <div className="template-config">
-                    <div className="config-group">
-                      <label>Nombre del template:</label>
-                      <input
-                        type="text"
-                        value={templateName}
-                        onChange={(e) => setTemplateName(e.target.value)}
-                        placeholder="Mi template personalizado"
-                        className="template-name-input"
-                      />
-                    </div>
-
-                    {/* Configuración de arrays */}
-                    {hasArrays && (
-                      <div className="config-group">
-                        <label>Configuración de Arrays:</label>
-                        <div className="array-configs">
-                          {getAvailableArrays().map(arrayPath => (
-                            <div key={arrayPath} className="array-config-item">
-                              <span className="array-name">{arrayPath}:</span>
-                              <input
-                                type="number"
-                                min="1"
-                                max="10"
-                                value={getArrayCount(arrayPath)}
-                                onChange={(e) => setArrayCount(arrayPath, parseInt(e.target.value) || 1)}
-                                className="array-count-input"
-                              />
-                              <span className="array-label">elementos</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Propiedades seleccionadas */}
-                  <div className="selected-properties">
-                    <div className="properties-header">
-                      <h4>Propiedades Seleccionadas</h4>
-                      <button 
-                        onClick={handleClearSelection}
-                        className="clear-selection-btn"
-                        title="Limpiar selección"
-                      >
-                        🗑️ Limpiar
-                      </button>
-                    </div>
-                    <div className="properties-list">
-                      {Array.from(selectedProperties).map(prop => (
-                        <div key={prop} className="property-item">
-                          <span className="property-path">{prop}</span>
-                          <button 
-                            onClick={() => handlePropertyToggle(prop)}
-                            className="remove-property"
-                            title="Remover propiedad"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Preview del JSON */}
-                  <div className="json-preview">
+                  {/* Preview del JSON - SIN estadísticas redundantes */}
+                  <div className="json-preview-only">
                     <div className="preview-header">
                       <h4>Preview del Template</h4>
                       {hasTemplate && (
@@ -528,7 +342,8 @@ const App = () => {
                         </div>
                       )}
                     </div>
-                    <div className="preview-container">
+                    
+                    <div className="preview-container-fixed">
                       <pre className="json-display">
                         {hasTemplate ? formattedTemplate : '{\n  "message": "Selecciona propiedades para generar template"\n}'}
                       </pre>
@@ -541,7 +356,6 @@ const App = () => {
                       className="export-btn primary"
                       onClick={handleExportTemplate}
                       disabled={!hasTemplate}
-                      title={hasTemplate ? "Descargar template como archivo JSON" : "Selecciona propiedades primero"}
                     >
                       📥 Descargar JSON
                     </button>
@@ -549,88 +363,183 @@ const App = () => {
                       className="export-btn secondary"
                       onClick={handleCopyToClipboard}
                       disabled={!hasTemplate}
-                      title={hasTemplate ? "Copiar template al portapapeles" : "Selecciona propiedades primero"}
                     >
-                      📋 Copiar al portapapeles
+                      📋 Copiar
                     </button>
                   </div>
-
-                  {/* Estadísticas del template */}
-                  {hasTemplate && templateStats && (
-                    <div className="template-statistics">
-                      <h4>📊 Estadísticas del Template</h4>
-                      <div className="stats-grid">
-                        <div className="stat-card">
-                          <span className="stat-number">{templateStats.totalProperties}</span>
-                          <span className="stat-label">Total</span>
-                        </div>
-                        <div className="stat-card">
-                          <span className="stat-number">{templateStats.primitiveProperties}</span>
-                          <span className="stat-label">Primitivas</span>
-                        </div>
-                        <div className="stat-card">
-                          <span className="stat-number">{templateStats.objectProperties}</span>
-                          <span className="stat-label">Objetos</span>
-                        </div>
-                        <div className="stat-card">
-                          <span className="stat-number">{templateStats.arrayProperties}</span>
-                          <span className="stat-label">Arrays</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="template-empty">
                   <h3>🎯 Construye tu Template</h3>
-                  <p>Selecciona propiedades del panel central para:</p>
-                  <ul>
-                    <li>Crear templates de request con <strong>datos reales</strong></li>
-                    <li>Configurar arrays con N elementos personalizados</li>
-                    <li>Exportar JSON estructurado y válido</li>
-                    <li>Generar documentación automática</li>
-                  </ul>
-                  
-                  {hasComparison && (
-                    <div className="template-stats">
-                      <p className="stats-hint">
-                        💡 Tienes <strong>{stats?.totalProperties || 0} propiedades</strong> disponibles para seleccionar
-                      </p>
-                      <p className="stats-hint">
-                        ✅ <strong>{stats?.requiredProperties || 0}</strong> son requeridas (aparecen en todos los archivos)
-                      </p>
-                      <p className="stats-hint">
-                        🔥 <strong>Nuevo:</strong> Los templates usan datos reales de tus JSONs
-                      </p>
-                    </div>
-                  )}
+                  <p>Selecciona propiedades del árbol para generar un template JSON con datos reales.</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* Contenido colapsado */}
-          {rightPanelCollapsed && (
+          {/* Estado colapsado */}
+          {isTemplateCollapsed && (
             <div className="collapsed-content">
               <div className="collapsed-indicator">
                 🎯
-                <span className="selected-count">{selectedProperties.size}</span>
+                {selectedProperties.size > 0 && (
+                  <span className="selected-count">{selectedProperties.size}</span>
+                )}
               </div>
             </div>
           )}
         </aside>
       </main>
+
+      {/* Modal para carga de archivos - SIN lista integrada */}
+      {showFileModal && (
+        <div className="modal-overlay" onClick={() => setShowFileModal(false)}>
+          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>📁 Cargar Archivos JSON</h3>
+              <button 
+                className="modal-close"
+                onClick={() => setShowFileModal(false)}
+                title="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="modal-content">
+              <FileUploader onFilesLoaded={handleFilesLoaded} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal JSON Settings */}
+      {showJSONSettings && (
+        <div className="modal-overlay" onClick={() => setShowJSONSettings(false)}>
+          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>⚙️ JSON Settings</h3>
+              <button 
+                className="modal-close"
+                onClick={() => setShowJSONSettings(false)}
+                title="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="modal-content">
+              {/* Configuración del template */}
+              {selectedProperties.size > 0 && (
+                <div className="settings-section">
+                  <h4>🎯 Configuración del Template</h4>
+                  <div className="config-group">
+                    <label>Nombre del template:</label>
+                    <input
+                      type="text"
+                      value={templateName}
+                      onChange={(e) => setTemplateName(e.target.value)}
+                      placeholder="Mi template personalizado"
+                      className="template-name-input"
+                    />
+                  </div>
+
+                  {/* Configuración de arrays */}
+                  {hasArrays && (
+                    <div className="config-group">
+                      <label>Arrays configurables:</label>
+                      <div className="array-configs">
+                        {getAvailableArrays().map(arrayPath => (
+                          <div key={arrayPath} className="array-config-item">
+                            <span className="array-name">{arrayPath}:</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="10"
+                              value={getArrayCount(arrayPath)}
+                              onChange={(e) => setArrayCount(arrayPath, parseInt(e.target.value) || 1)}
+                              className="array-count-input"
+                            />
+                            <span className="array-label">elementos</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Estadísticas del template */}
+                  {hasTemplate && templateStats && (
+                    <div className="settings-section">
+                      <h4>📊 Estadísticas del Template</h4>
+                      <div className="stats-grid">
+                        <div className="stat-card-small">
+                          <span className="stat-number">{templateStats.totalProperties}</span>
+                          <span className="stat-label">Total</span>
+                        </div>
+                        <div className="stat-card-small">
+                          <span className="stat-number">{templateStats.arrayProperties}</span>
+                          <span className="stat-label">Arrays</span>
+                        </div>
+                        <div className="stat-card-small">
+                          <span className="stat-number">{templateStats.objectProperties}</span>
+                          <span className="stat-label">Objetos</span>
+                        </div>
+                        <div className="stat-card-small">
+                          <span className="stat-number">{templateStats.primitiveProperties}</span>
+                          <span className="stat-label">Primitivas</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dropdown lista de archivos - POSICIÓN ABSOLUTA CORRECTA */}
+      {showFilesList && loadedJSONs.length > 0 && (
+        <>
+          {/* Overlay para cerrar al hacer click fuera */}
+          <div 
+            className="dropdown-overlay"
+            onClick={() => setShowFilesList(false)}
+          />
+          <div className="files-dropdown">
+            <div className="files-dropdown-header">
+              <h4>📁 Archivos Cargados ({loadedJSONs.length})</h4>
+              <button 
+                onClick={() => setShowFilesList(false)}
+                className="dropdown-close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="files-dropdown-list">
+              {loadedJSONs.map(json => (
+                <div key={json.id} className={`file-dropdown-item ${json.valid ? 'valid' : 'invalid'}`}>
+                  <div className="file-dropdown-info">
+                    <span className="file-dropdown-name" title={json.name}>
+                      {json.name}
+                    </span>
+                    <span className={`file-dropdown-status ${json.valid ? 'valid' : 'invalid'}`}>
+                      {json.valid ? '✅' : '❌'}
+                    </span>
+                  </div>
+                  <button 
+                    onClick={() => handleRemoveJSON(json.id)}
+                    className="remove-file-dropdown"
+                    title="Remover archivo"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
-};
-
-// Utility function para formatear tamaño de archivo
-const formatFileSize = (bytes) => {
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
 export default App;

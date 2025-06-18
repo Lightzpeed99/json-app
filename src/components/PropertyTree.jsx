@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { 
   buildTreeStructure, 
   applySmartSelection,
@@ -14,20 +14,37 @@ const PropertyTree = ({
   expandedPaths = new Set(),
   onToggleExpanded = () => {},
   arrayConfig = {},
-  onArrayCountChange = () => {}
+  onArrayCountChange = () => {},
+  searchText = '' // NUEVO: Búsqueda desde props
 }) => {
-  const [searchText, setSearchText] = useState('');
-  const [arrayTooltip, setArrayTooltip] = useState({ visible: false, arrayPath: '', x: 0, y: 0 });
+  // Estado para tooltip de arrays
+  const [arrayTooltip, setArrayTooltip] = React.useState({ 
+    visible: false, 
+    arrayPath: '', 
+    x: 0, 
+    y: 0 
+  });
 
   if (!comparisonResult) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: '#cbd5e1' }}>
-        No hay datos para mostrar
+      <div style={{ 
+        padding: '2rem', 
+        textAlign: 'center', 
+        color: '#cbd5e1',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div>
+          <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>🌳</div>
+          <div>No hay datos para mostrar</div>
+        </div>
       </div>
     );
   }
 
-  // Filtrar propiedades por búsqueda
+  // Filtrar propiedades por búsqueda (desde props)
   const filteredProperties = useMemo(() => {
     if (!searchText) return comparisonResult;
     
@@ -58,59 +75,7 @@ const PropertyTree = ({
     return arrays;
   }, [selectedProperties]);
 
-  // FUNCIONES DE SELECCIÓN RÁPIDA
-  const handleSelectAll = () => {
-    const allPaths = Object.keys(comparisonResult);
-    allPaths.forEach(path => {
-      if (!selectedProperties.has(path)) {
-        onPropertyToggle(path);
-      }
-    });
-  };
-
-  const handleSelectNone = () => {
-    Array.from(selectedProperties).forEach(path => {
-      onPropertyToggle(path);
-    });
-  };
-
-  const handleSelectByLevel = (level) => {
-    const levelPaths = Object.entries(comparisonResult)
-      .filter(([_, property]) => property.level === level)
-      .map(([path]) => path);
-    
-    levelPaths.forEach(path => {
-      if (!selectedProperties.has(path)) {
-        onPropertyToggle(path);
-      }
-    });
-  };
-
-  const handleDeselectByLevel = (level) => {
-    const levelPaths = Object.entries(comparisonResult)
-      .filter(([_, property]) => property.level === level)
-      .map(([path]) => path);
-    
-    levelPaths.forEach(path => {
-      if (selectedProperties.has(path)) {
-        onPropertyToggle(path);
-      }
-    });
-  };
-
-  const handleSelectObjects = () => {
-    const objectPaths = Object.entries(comparisonResult)
-      .filter(([_, property]) => property.type === 'object')
-      .map(([path]) => path);
-    
-    objectPaths.forEach(path => {
-      if (!selectedProperties.has(path)) {
-        onPropertyToggle(path);
-      }
-    });
-  };
-
-  // CORREGIDA: Selección con cadena completa de padres y feedback visual mejorado
+  // SELECCIÓN CON CADENA COMPLETA DE PADRES
   const handleSmartPropertyToggle = (path) => {
     const isCurrentlySelected = selectedProperties.has(path);
     
@@ -141,7 +106,7 @@ const PropertyTree = ({
       const requiredParents = getAllParents(path);
       const fullChain = [...requiredParents, path];
       
-      // CORREGIDO: Selección secuencial para asegurar actualización visual
+      // Selección secuencial para asegurar actualización visual
       fullChain.forEach((targetPath, index) => {
         setTimeout(() => {
           if (!selectedProperties.has(targetPath)) {
@@ -181,11 +146,6 @@ const PropertyTree = ({
     return property.type === 'array' && detectableArrays.has(property.path);
   };
 
-  // CORREGIDA: Verificar estado de selección visual
-  const isNodeSelected = (nodePath) => {
-    return selectedProperties.has(nodePath);
-  };
-
   // Verificar si el checkbox debe estar indeterminado
   const isNodeIndeterminate = (nodePath) => {
     if (!hasChildren(nodePath, comparisonResult)) return false;
@@ -203,7 +163,7 @@ const PropertyTree = ({
     return selectedDescendants.length > 0 && selectedDescendants.length < allDescendants.length;
   };
 
-  // NUEVA: Obtener estado visual completo del nodo
+  // Obtener estado visual completo del nodo
   const getNodeVisualState = (nodePath) => {
     const isSelected = selectedProperties.has(nodePath);
     const isIndeterminate = isNodeIndeterminate(nodePath);
@@ -218,20 +178,20 @@ const PropertyTree = ({
     };
   };
 
-  // CORREGIDA: Renderizar nodo individual con feedback visual mejorado
+  // Renderizar nodo individual con feedback visual mejorado
   const renderTreeNode = (node, index) => {
     const levelColor = getLevelColor(node.level || 0);
     const isArray = isConfigurableArray(node);
     const currentCount = arrayConfig[node.path]?.count || 2;
     
-    // CORREGIDO: Usar la nueva función de estado visual
+    // Usar la función de estado visual
     const visualState = getNodeVisualState(node.path);
     const canExpand = node.hasChildren;
     const isExpanded = node.isExpanded;
     
     return (
       <div 
-        key={`${node.path}-${selectedProperties.size}-${Date.now()}`} // CORREGIDO: Key que fuerza re-render
+        key={`${node.path}-${selectedProperties.size}-${Date.now()}`}
         style={{
           marginBottom: '2px',
           marginLeft: `${(node.level || 0) * 20}px`
@@ -276,7 +236,7 @@ const PropertyTree = ({
               <div style={{ minWidth: '20px' }}></div>
             )}
             
-            {/* CORREGIDO: Checkbox con estado visual sincronizado */}
+            {/* Checkbox con estado visual sincronizado */}
             <input
               type="checkbox"
               checked={visualState.isSelected}
@@ -389,7 +349,7 @@ const PropertyTree = ({
                   </span>
                 )}
 
-                {/* CORREGIDO: Indicador visual de selección mejorado */}
+                {/* Indicador visual de selección mejorado */}
                 {visualState.showBadge && (
                   <span style={{
                     background: '#2563eb',
@@ -451,7 +411,7 @@ const PropertyTree = ({
                 </div>
               )}
 
-              {/* MEJORADO: Mostrar información de inclusión en template */}
+              {/* Mostrar información de inclusión en template */}
               {visualState.isSelected && (
                 <div style={{
                   fontSize: '0.75rem',
@@ -501,168 +461,47 @@ const PropertyTree = ({
     return icons[type] || '❓';
   };
 
-  const totalCount = treeNodes.length;
-  const selectedCount = selectedProperties.size;
-  const requiredCount = treeNodes.filter(p => p.isRequired).length;
-  const optionalCount = totalCount - requiredCount;
-
-  // Obtener niveles disponibles
-  const availableLevels = [...new Set(Object.values(comparisonResult).map(p => p.level))].sort();
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '1rem', position: 'relative' }}>
-      {/* Header con filtros y controles */}
-      <div style={{ marginBottom: '1.5rem', flexShrink: 0 }}>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          marginBottom: '1rem',
-          flexWrap: 'wrap',
-          gap: '0.5rem'
-        }}>
-          <h3 style={{ color: '#f8fafc', margin: 0 }}>
-            🌳 Árbol de Propiedades
-          </h3>
-          <div style={{ 
-            fontSize: '0.875rem', 
-            color: '#cbd5e1',
-            display: 'flex',
-            gap: '1rem',
-            flexWrap: 'wrap'
-          }}>
-            <span>{totalCount} visibles</span>
-            <span style={{ color: '#34d399' }}>{requiredCount} requeridas</span>
-            <span style={{ color: '#fbbf24' }}>{optionalCount} opcionales</span>
-            {selectedCount > 0 && (
-              <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>
-                {selectedCount} seleccionadas
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Controles de selección rápida */}
-        <div style={{ 
-          marginBottom: '1rem',
-          padding: '1rem',
-          background: '#1e293b',
-          borderRadius: '8px',
-          border: '1px solid #475569'
-        }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-            <span style={{ color: '#cbd5e1', fontSize: '0.9rem', marginRight: '0.5rem' }}>
-              Selección rápida:
-            </span>
-            
-            {/* Botones de selección */}
-            <button onClick={handleSelectAll} style={buttonStyle}>Todas</button>
-            
-            {availableLevels.map(level => (
-              <button 
-                key={`select-${level}`}
-                onClick={() => handleSelectByLevel(level)} 
-                style={buttonStyle}
-              >
-                Nivel {level}
-              </button>
-            ))}
-            
-            <button onClick={handleSelectObjects} style={buttonStyle}>Objetos</button>
-            
-            {/* Separador */}
-            <div style={{ height: '20px', width: '1px', background: '#475569', margin: '0 0.5rem' }}></div>
-            
-            {/* Botones de deselección */}
-            <button onClick={handleSelectNone} style={buttonStyleRed}>Ninguna</button>
-            
-            {availableLevels.map(level => (
-              <button 
-                key={`deselect-${level}`}
-                onClick={() => handleDeselectByLevel(level)} 
-                style={buttonStyleRed}
-              >
-                Des-Nivel {level}
-              </button>
-            ))}
-          </div>
-        </div>
-        
-        {/* Barra de búsqueda */}
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <input
-            type="text"
-            placeholder="🔍 Buscar propiedades..."
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            style={{
-              flex: 1,
-              padding: '0.5rem 0.75rem',
-              background: '#334155',
-              border: '1px solid #475569',
-              borderRadius: '6px',
-              color: '#f8fafc',
-              fontSize: '0.875rem'
-            }}
-          />
-          
-          {searchText && (
-            <button
-              onClick={() => setSearchText('')}
-              style={{
-                background: '#dc2626',
-                border: 'none',
-                color: 'white',
-                padding: '0.5rem 1rem',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '0.875rem'
-              }}
-            >
-              ✕ Limpiar
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Contenido del árbol - CON SCROLL */}
-      <div className="tree-content" style={{ 
+    <div style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      height: '100%', 
+      position: 'relative' 
+    }}>
+      {/* SOLO ÁRBOL DE NODOS - SIN HEADERS NI RESÚMENES */}
+      <div style={{ 
         background: '#1e293b', 
         padding: '1rem', 
-        borderRadius: '8px',
-        border: '1px solid #475569',
         flex: 1,
         overflowY: 'auto'
       }}>
         {treeNodes.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
-            {searchText ? 'No se encontraron propiedades con ese filtro' : 'No hay propiedades para mostrar'}
+          <div style={{ 
+            textAlign: 'center', 
+            color: '#94a3b8', 
+            padding: '2rem',
+            background: '#334155',
+            borderRadius: '8px',
+            border: '1px solid #475569'
+          }}>
+            {searchText ? (
+              <div>
+                <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>🔍</div>
+                <div>No se encontraron propiedades con "{searchText}"</div>
+                <div style={{ fontSize: '0.8rem', marginTop: '0.5rem', color: '#64748b' }}>
+                  Intenta con otro término de búsqueda
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>🌳</div>
+                <div>No hay propiedades para mostrar</div>
+              </div>
+            )}
           </div>
         ) : (
           <div>
             {treeNodes.map((node, index) => renderTreeNode(node, index))}
-            
-            {/* Resumen de selección */}
-            {totalCount > 0 && (
-              <div style={{ 
-                textAlign: 'center', 
-                color: '#94a3b8', 
-                marginTop: '1rem',
-                padding: '1rem',
-                borderTop: '1px solid #475569',
-                fontSize: '0.875rem'
-              }}>
-                {searchText ? 
-                  `Mostrando ${totalCount} de ${Object.keys(comparisonResult).length} propiedades` :
-                  `Total: ${totalCount} nodos visibles en el árbol`
-                }
-                {selectedCount > 0 && (
-                  <div style={{ marginTop: '0.5rem', color: '#60a5fa', fontWeight: 'bold' }}>
-                    ✓ {selectedCount} propiedades seleccionadas para template
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -682,9 +521,9 @@ const PropertyTree = ({
   );
 };
 
-// Componente Tooltip para arrays
+// Componente Tooltip para arrays (sin cambios)
 const ArrayTooltip = ({ x, y, arrayPath, currentCount, onSubmit, onClose }) => {
-  const [count, setCount] = useState(currentCount.toString());
+  const [count, setCount] = React.useState(currentCount.toString());
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -754,29 +593,6 @@ const ArrayTooltip = ({ x, y, arrayPath, currentCount, onSubmit, onClose }) => {
       </form>
     </div>
   );
-};
-
-// Estilos para botones
-const buttonStyle = {
-  background: '#2563eb',
-  border: 'none',
-  color: 'white',
-  padding: '0.375rem 0.75rem',
-  borderRadius: '6px',
-  cursor: 'pointer',
-  fontSize: '0.8rem',
-  transition: 'all 0.15s ease'
-};
-
-const buttonStyleRed = {
-  background: '#dc2626',
-  border: 'none',
-  color: 'white',
-  padding: '0.375rem 0.75rem',
-  borderRadius: '6px',
-  cursor: 'pointer',
-  fontSize: '0.8rem',
-  transition: 'all 0.15s ease'
 };
 
 export default PropertyTree;
